@@ -1,0 +1,15 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Lifeguard",
+      "type": "shell",
+      "command": "${command:python.interpreterPath}",
+      "args": ["-m", "lifeguard"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

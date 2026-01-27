@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+
+# Env
+.env
+
+# Dashboard local Firebase web config
+dashboard/firebase-config.js
+
+# Tools
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Packaging
+*.egg-info/
+dist/
+build/
+
+# VS Code
+.vscode/settings.json
