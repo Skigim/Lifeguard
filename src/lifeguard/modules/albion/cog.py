@@ -12,6 +12,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from lifeguard.config import Config
+from lifeguard.exceptions import FeatureDisabledError
 from lifeguard.modules.albion.api import fetch_prices
 from lifeguard.modules.albion import repo
 
@@ -22,12 +23,6 @@ LOGGER = logging.getLogger(__name__)
 
 
 # --- Feature Check Decorators ---
-
-class FeatureDisabledError(app_commands.CheckFailure):
-    """Raised when a feature is disabled."""
-    def __init__(self, feature_name: str):
-        self.feature_name = feature_name
-        super().__init__(f"{feature_name} is not enabled in this server.")
 
 
 def require_albion_prices():

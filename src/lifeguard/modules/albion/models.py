@@ -5,10 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import datetime
 
-
-def _drop_none(d: dict) -> dict:
-    """Remove None values from a dictionary."""
-    return {k: v for k, v in d.items() if v is not None}
+from lifeguard.utils import drop_none
 
 
 @dataclass(frozen=True)
@@ -33,7 +30,7 @@ class PlayerDoc:
     updated_at: datetime | None = None
 
     def to_firestore(self) -> dict:
-        return _drop_none(asdict(self))
+        return drop_none(asdict(self))
 
 
 @dataclass(frozen=True)
@@ -44,7 +41,7 @@ class GuildDoc:
     updated_at: datetime | None = None
 
     def to_firestore(self) -> dict:
-        return _drop_none(asdict(self))
+        return drop_none(asdict(self))
 
 
 @dataclass(frozen=True)
@@ -55,7 +52,7 @@ class ZoneDoc:
     updated_at: datetime | None = None
 
     def to_firestore(self) -> dict:
-        return _drop_none(asdict(self))
+        return drop_none(asdict(self))
 
 
 @dataclass(frozen=True)
@@ -67,7 +64,7 @@ class ItemRef:
     quality: int | None = None
 
     def to_firestore(self) -> dict:
-        return _drop_none(asdict(self))
+        return drop_none(asdict(self))
 
 
 @dataclass(frozen=True)
@@ -123,4 +120,4 @@ class BuildDoc:
         add_item("food", self.food)
         add_item("potion", self.potion)
 
-        return _drop_none(data)
+        return drop_none(data)

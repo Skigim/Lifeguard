@@ -3,10 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
-
-def _drop_none(d: dict) -> dict:
-    """Remove None values from a dictionary."""
-    return {k: v for k, v in d.items() if v is not None}
+from lifeguard.utils import drop_none
 
 
 @dataclass(frozen=True)
@@ -21,7 +18,7 @@ class ReviewCategory:
     allow_notes: bool = True  # Whether reviewers can add notes
 
     def to_firestore(self) -> dict:
-        return _drop_none(asdict(self))
+        return drop_none(asdict(self))
 
     @classmethod
     def from_firestore(cls, data: dict) -> ReviewCategory:
@@ -47,7 +44,7 @@ class SubmissionField:
     validation_regex: str = ""  # Optional regex for validation
 
     def to_firestore(self) -> dict:
-        return _drop_none(asdict(self))
+        return drop_none(asdict(self))
 
     @classmethod
     def from_firestore(cls, data: dict) -> SubmissionField:

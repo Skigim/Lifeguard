@@ -30,6 +30,7 @@ from lifeguard.modules.content_review.views.review_wizard import (
 )
 from lifeguard.modules.content_review.views.submission_modal import SubmissionModal
 from lifeguard.modules.albion import repo as albion_repo
+from lifeguard.exceptions import FeatureDisabledError
 
 if TYPE_CHECKING:
     from google.cloud.firestore import Client as FirestoreClient
@@ -38,12 +39,6 @@ LOGGER = logging.getLogger(__name__)
 
 
 # --- Feature Check Decorators ---
-
-class FeatureDisabledError(app_commands.CheckFailure):
-    """Raised when a feature is disabled."""
-    def __init__(self, feature_name: str):
-        self.feature_name = feature_name
-        super().__init__(f"{feature_name} is not enabled in this server.")
 
 
 def require_content_review():

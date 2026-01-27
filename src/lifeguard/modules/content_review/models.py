@@ -4,10 +4,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Literal
 
-
-def _drop_none(d: dict) -> dict:
-    """Remove None values from a dictionary."""
-    return {k: v for k, v in d.items() if v is not None}
+from lifeguard.utils import drop_none
 
 
 @dataclass
