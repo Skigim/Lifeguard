@@ -16,11 +16,8 @@
 **📝 Content Review**
 Submit content for team review with scoring & leaderboards
 
-**💰 Albion Prices** 
-Look up item prices from Albion Data Project
-
-**⚔️ Albion Builds**
-View saved Albion builds
+**� Time Impersonator**
+Send messages with dynamic Discord timestamps
 
 ## 📖 Commands
 
@@ -35,9 +32,9 @@ View saved Albion builds
 • `/leaderboard` — Top reviewers
 • `/review-profile` — Reviewer stats
 
-**Albion**
-• `/price <item>` — Item prices
-• `/build <id>` — View build
+**Time Impersonator**
+• `/tz <timezone>` — Set your timezone
+• `/time <message>` — Send message with dynamic timestamps
 
 ## 💡 Quick Setup: Content Review
 1. `/enable-feature` → Content Review
@@ -45,10 +42,16 @@ View saved Albion builds
 3. `/config` → Content Review → Add Submission Field
 4. `/config` → Content Review → Add Review Category
 
+## 💡 Quick Setup: Time Impersonator
+1. `/enable-feature` → Time Impersonator
+2. Users run `/tz` to set their timezone
+3. Use `/time` to send messages with dynamic timestamps
+
 ## ❓ Need Help?
 • No permission? Need Admin or Bot Admin role
 • No fields? Add via `/config` → Content Review
 • Button missing? `/config` → Re-post Submit Button
+• Time not working? Bot needs Manage Webhooks permission
 ```
 
 ---

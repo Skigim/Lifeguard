@@ -1,5 +1,19 @@
 # Copilot Instructions for Lifeguard
 
+## Critical: Code Quality Requirements
+
+**NEVER duplicate logic.** If the same check, validation, or behavior is needed in multiple places, extract it to a single reusable function. Do not:
+- Copy-paste code between functions
+- Write inline implementations when a decorator/utility exists
+- Create wrapper functions that just call another function
+- Take "quick fix" shortcuts that duplicate existing solutions
+
+**Single source of truth.** Every piece of logic has exactly one canonical implementation. Search the codebase first before implementing anything—extend existing patterns rather than creating parallel ones.
+
+See `docs/StyleGuide.md` for complete code quality guidelines.
+
+---
+
 ## Project Overview
 Lifeguard is a Discord bot built with discord.py, using Firebase/Firestore as the backend. It follows a modular architecture with feature modules under `src/lifeguard/modules/`.
 

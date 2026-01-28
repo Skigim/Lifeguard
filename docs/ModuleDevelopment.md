@@ -182,9 +182,66 @@ async def setup_hook() -> None:
 
 ## Optional: Feature Flags
 
-If your module should be toggleable per-guild:
+If your module should be toggleable per-guild, you need two things:
 
-### 1. Add feature check decorator
+1. A feature check decorator to guard your commands
+2. Integration with the `/enable-feature` and `/disable-feature` dropdowns
+
+### 1. Create a Config Model
+
+In your module's `config.py`:
+
+```python
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass
+class <Name>Config:
+    """Guild-level configuration for the <Name> module."""
+
+    guild_id: int
+    enabled: bool = False
+
+    def to_firestore(self) -> dict:
+        return {
+            "guild_id": self.guild_id,
+            "enabled": self.enabled,
+        }
+
+    @classmethod
+    def from_firestore(cls, data: dict) -> <Name>Config:
+        return cls(
+            guild_id=data["guild_id"],
+            enabled=data.get("enabled", False),
+        )
+```
+
+### 2. Add Config CRUD to `repo.py`
+
+```python
+from lifeguard.modules.<name>.config import <Name>Config
+
+CONFIGS_COLLECTION = "<name>_configs"
+
+
+def get_config(firestore: FirestoreClient, guild_id: int) -> <Name>Config | None:
+    doc = firestore.collection(CONFIGS_COLLECTION).document(str(guild_id)).get()
+    if not doc.exists:
+        return None
+    return <Name>Config.from_firestore(doc.to_dict())
+
+
+def save_config(firestore: FirestoreClient, config: <Name>Config) -> None:
+    firestore.collection(CONFIGS_COLLECTION).document(str(config.guild_id)).set(
+        config.to_firestore(), merge=True
+    )
+```
+
+### 3. Add Feature Check Decorator
+
+In your `cog.py`:
 
 ```python
 from lifeguard.exceptions import FeatureDisabledError
@@ -205,13 +262,112 @@ def require_<name>():
     return app_commands.check(predicate)
 ```
 
-### 2. Apply to commands
+### 4. Apply to Commands
 
 ```python
 @require_<name>()
 @app_commands.command(name="my-command", description="Does something")
 async def my_command(self, interaction: discord.Interaction) -> None:
     ...
+```
+
+### 5. Integrate with Enable/Disable Flow
+
+The central enable/disable UI is in `content_review/cog.py`. To add your module:
+
+**a) Add to `EnableFeatureSelect.__init__`:**
+
+```python
+options = [
+    # ... existing options ...
+    discord.SelectOption(
+        label="<Name>",
+        value="<name>",
+        description="Brief description of your feature",
+        emoji="🔧",  # Choose an appropriate emoji
+    ),
+]
+```
+
+**b) Add callback handler in `EnableFeatureSelect.callback`:**
+
+```python
+elif self.values[0] == "<name>":
+    await self.cog._enable_<name>(interaction)
+```
+
+**c) Add to `DisableFeatureSelect.__init__`:**
+
+```python
+options = [
+    # ... existing options ...
+    discord.SelectOption(
+        label="<Name>",
+        value="<name>",
+        description="Disable <name> feature",
+        emoji="🔧",
+    ),
+]
+```
+
+**d) Add callback handler in `DisableFeatureSelect.callback`:**
+
+```python
+elif self.values[0] == "<name>":
+    await self.cog._disable_<name>(interaction)
+```
+
+**e) Add helper methods to `ContentReviewCog`:**
+
+```python
+async def _enable_<name>(self, interaction: discord.Interaction) -> None:
+    """Enable <name> feature."""
+    if not interaction.guild:
+        return
+
+    from lifeguard.modules.<name> import repo as <name>_repo
+    from lifeguard.modules.<name>.config import <Name>Config
+
+    config = <Name>Config(guild_id=interaction.guild.id, enabled=True)
+    <name>_repo.save_config(self.firestore, config)
+
+    await interaction.response.edit_message(
+        content=(
+            "✅ **<Name> enabled!**\n\n"
+            "Description of what users can now do."
+        ),
+        embed=None,
+        view=None,
+    )
+
+    LOGGER.info("<Name> enabled: guild=%s", interaction.guild.id)
+
+
+async def _disable_<name>(self, interaction: discord.Interaction) -> None:
+    """Disable <name> feature."""
+    if not interaction.guild:
+        return
+
+    from lifeguard.modules.<name> import repo as <name>_repo
+    from lifeguard.modules.<name>.config import <Name>Config
+
+    config = <name>_repo.get_config(self.firestore, interaction.guild.id)
+    if not config or not config.enabled:
+        await interaction.response.edit_message(
+            content="<Name> is not enabled.", embed=None, view=None
+        )
+        return
+
+    config = <Name>Config(guild_id=interaction.guild.id, enabled=False)
+    <name>_repo.save_config(self.firestore, config)
+
+    await interaction.response.edit_message(
+        content="✅ **<Name> disabled!**",
+        embed=None,
+        view=None,
+    )
+
+    LOGGER.info("<Name> disabled: guild=%s", interaction.guild.id)
 ```
 
 ## Optional: Discord UI Components

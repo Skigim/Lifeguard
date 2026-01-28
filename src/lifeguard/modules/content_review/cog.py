@@ -132,6 +132,12 @@ class EnableFeatureSelect(discord.ui.Select):
                 description="Review system with tickets, scoring, and leaderboards",
                 emoji="📝",
             ),
+            discord.SelectOption(
+                label="Time Impersonator",
+                value="time_impersonator",
+                description="Send messages with dynamic Discord timestamps",
+                emoji="🕐",
+            ),
         ]
         # Only show Albion options if the cog is loaded
         if cog.bot.get_cog("AlbionCog"):
@@ -163,6 +169,8 @@ class EnableFeatureSelect(discord.ui.Select):
                 color=discord.Color.blue(),
             )
             await interaction.response.edit_message(embed=embed, view=view)
+        elif self.values[0] == "time_impersonator":
+            await self.cog._enable_time_impersonator(interaction)
         elif self.values[0] == "albion_prices":
             await self.cog._enable_albion_feature(interaction, "prices")
         elif self.values[0] == "albion_builds":
@@ -190,6 +198,12 @@ class DisableFeatureSelect(discord.ui.Select):
                 description="Disable the content review system",
                 emoji="📝",
             ),
+            discord.SelectOption(
+                label="Time Impersonator",
+                value="time_impersonator",
+                description="Disable time impersonator feature",
+                emoji="🕐",
+            ),
         ]
         # Only show Albion options if the cog is loaded
         if cog.bot.get_cog("AlbionCog"):
@@ -212,6 +226,8 @@ class DisableFeatureSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction) -> None:
         if self.values[0] == "content_review":
             await self.cog._disable_content_review_feature(interaction)
+        elif self.values[0] == "time_impersonator":
+            await self.cog._disable_time_impersonator(interaction)
         elif self.values[0] == "albion_prices":
             await self.cog._disable_albion_feature(interaction, "prices")
         elif self.values[0] == "albion_builds":
@@ -1135,6 +1151,59 @@ class ContentReviewCog(commands.Cog):
         )
 
         LOGGER.info("Content review disabled: guild=%s", interaction.guild.id)
+
+    # --- Time Impersonator Helpers ---
+
+    async def _enable_time_impersonator(self, interaction: discord.Interaction) -> None:
+        """Enable time impersonator feature."""
+        if not interaction.guild:
+            return
+
+        from lifeguard.modules.time_impersonator import repo as ti_repo
+        from lifeguard.modules.time_impersonator.config import TimeImpersonatorConfig
+
+        config = TimeImpersonatorConfig(guild_id=interaction.guild.id, enabled=True)
+        ti_repo.save_config(self.firestore, config)
+
+        await interaction.response.edit_message(
+            content=(
+                "✅ **Time Impersonator enabled!**\n\n"
+                "Users can now:\n"
+                "• `/tz` — Set their timezone\n"
+                "• `/time` — Send messages with dynamic timestamps\n\n"
+                "The bot needs **Manage Webhooks** permission in channels where `/time` is used."
+            ),
+            embed=None,
+            view=None,
+        )
+
+        LOGGER.info("Time Impersonator enabled: guild=%s", interaction.guild.id)
+
+    async def _disable_time_impersonator(self, interaction: discord.Interaction) -> None:
+        """Disable time impersonator feature."""
+        if not interaction.guild:
+            return
+
+        from lifeguard.modules.time_impersonator import repo as ti_repo
+        from lifeguard.modules.time_impersonator.config import TimeImpersonatorConfig
+
+        config = ti_repo.get_config(self.firestore, interaction.guild.id)
+        if not config or not config.enabled:
+            await interaction.response.edit_message(
+                content="Time Impersonator is not enabled.", embed=None, view=None
+            )
+            return
+
+        config = TimeImpersonatorConfig(guild_id=interaction.guild.id, enabled=False)
+        ti_repo.save_config(self.firestore, config)
+
+        await interaction.response.edit_message(
+            content="✅ **Time Impersonator disabled!**",
+            embed=None,
+            view=None,
+        )
+
+        LOGGER.info("Time Impersonator disabled: guild=%s", interaction.guild.id)
 
     # --- Bot Admin Role Helpers ---
 

@@ -143,3 +143,71 @@ class ContentReviewCog(commands.Cog):
 - Use `ruff format` for consistent formatting
 - Line length: default (88 characters)
 - Use trailing commas in multi-line structures
+
+## Code Quality Principles
+
+### No Duplicate Logic
+**Never duplicate logic.** If the same check, transformation, or behavior exists in multiple places, extract it to a single reusable function.
+
+```python
+# ❌ BAD: Duplicating feature check logic
+@tz_group.command(name="set")
+async def set_timezone(self, interaction):
+    # Inline feature check - duplicated in every command
+    config = repo.get_config(self.firestore, interaction.guild.id)
+    if not config or not config.enabled:
+        raise FeatureDisabledError("Time Impersonator")
+    ...
+
+@tz_group.command(name="clear")
+async def clear_timezone(self, interaction):
+    # Same check duplicated here
+    config = repo.get_config(self.firestore, interaction.guild.id)
+    if not config or not config.enabled:
+        raise FeatureDisabledError("Time Impersonator")
+    ...
+
+# ✅ GOOD: Single predicate function used everywhere
+async def _check_feature_enabled(interaction: discord.Interaction) -> bool:
+    """Check that feature is enabled for this guild."""
+    if not interaction.guild:
+        return False
+    cog = interaction.client.get_cog("MyCog")
+    if not cog or not cog.firestore:
+        return False
+    config = repo.get_config(cog.firestore, interaction.guild.id)
+    if not config or not config.enabled:
+        raise FeatureDisabledError("Feature Name")
+    return True
+
+@tz_group.command(name="set")
+@app_commands.check(_check_feature_enabled)
+async def set_timezone(self, interaction):
+    ...
+
+@tz_group.command(name="clear")
+@app_commands.check(_check_feature_enabled)
+async def clear_timezone(self, interaction):
+    ...
+```
+
+### No Lazy Shortcuts
+Do not take shortcuts that create technical debt:
+
+- **No copy-paste code** — Extract shared logic into functions
+- **No wrapper functions that just call another function** — Use the underlying function directly
+- **No inline implementations when a decorator/utility exists** — Use existing patterns
+- **No "quick fixes" that duplicate existing solutions** — Find and extend the existing pattern
+
+### Single Source of Truth
+Every piece of logic should have exactly one canonical implementation:
+
+- Feature checks → One predicate function per feature
+- Validation logic → One validator function reused everywhere  
+- Data transformations → One utility function in the appropriate module
+- Error messages → Defined once, referenced by constant or function
+
+### When Adding New Features
+1. **Search first** — Check if similar logic already exists
+2. **Extend, don't duplicate** — Add to existing patterns rather than creating parallel ones
+3. **Refactor if needed** — If existing code doesn't support your use case, refactor it to be more general
