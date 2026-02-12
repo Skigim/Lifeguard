@@ -45,9 +45,14 @@ Creates the discord.py `Bot` instance with:
 
 ### Configuration (`config.py`)
 Frozen dataclass loaded from environment:
+- `BOT_ENV` - `"production"` (default) or `"test"` — selects which env files to load
 - `DISCORD_TOKEN` - Bot authentication
-- `GUILD_ID` - Optional dev guild for fast command sync
+- `GUILD_ID` - Optional guild for fast command sync (production)
+- `TEST_GUILD_ID` - Dev/test guild for command sync when `BOT_ENV=test`
 - `FIREBASE_*` - Firestore configuration
+
+When `BOT_ENV=test`, the bot loads `.env.test` first, then `.env` as fallback.
+Use `config.active_guild_id` to get the appropriate guild for the current environment.
 
 ### Module Architecture
 Each module is self-contained:

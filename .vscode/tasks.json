@@ -10,6 +10,19 @@
         "cwd": "${workspaceFolder}"
       },
       "problemMatcher": []
+    },
+    {
+      "label": "Run Lifeguard (Test)",
+      "type": "shell",
+      "command": "${command:python.interpreterPath}",
+      "args": ["-m", "lifeguard"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "BOT_ENV": "test"
+        }
+      },
+      "problemMatcher": []
     }
   ]
 }

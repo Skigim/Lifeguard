@@ -20,21 +20,32 @@ def create_bot(config: Config) -> commands.Bot:
 
     @bot.event
     async def on_ready() -> None:
-        LOGGER.info("Logged in as %s (%s)", bot.user, bot.user.id if bot.user else "?")
+        env_label = "TEST" if config.is_test else "PRODUCTION"
+        LOGGER.info(
+            "[%s] Logged in as %s (%s)",
+            env_label,
+            bot.user,
+            bot.user.id if bot.user else "?",
+        )
 
         # Only sync commands once, not on every reconnect
         if bot._commands_synced:  # type: ignore[attr-defined]
             return
 
+        target_guild_id = config.active_guild_id
         try:
-            if config.guild_id is not None:
-                guild = discord.Object(id=config.guild_id)
-                
+            if target_guild_id is not None:
+                guild = discord.Object(id=target_guild_id)
+
                 # Sync to guild
                 bot.tree.copy_global_to(guild=guild)
                 synced = await bot.tree.sync(guild=guild)
-                LOGGER.info("Synced %d app commands to guild %s", len(synced), config.guild_id)
-                
+                LOGGER.info(
+                    "Synced %d app commands to guild %s",
+                    len(synced),
+                    target_guild_id,
+                )
+
                 # Clear global commands to prevent duplicates (sync empty global)
                 bot.tree.clear_commands(guild=None)
                 await bot.tree.sync()

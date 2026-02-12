@@ -146,6 +146,10 @@ class <Name>Cog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
+    async def cog_load(self) -> None:
+        """Called when the cog is loaded."""
+        LOGGER.info("<Name> cog loaded")
+
     @property
     def firestore(self) -> FirestoreClient | None:
         return getattr(self.bot, "lifeguard_firestore", None)

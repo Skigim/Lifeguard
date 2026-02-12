@@ -87,22 +87,27 @@ def _parse_and_replace_times(message: str, user_tz: ZoneInfo) -> str:
         The message with time references replaced by Discord timestamp syntax.
     """
     # Import here to avoid import errors if dateparser not installed
+    import dateparser  # type: ignore[import-not-found]
     from dateparser.search import search_dates  # type: ignore[import-not-found]
 
     # Get current time in user's timezone as reference
     now_in_user_tz = datetime.now(user_tz)
 
-    # Search for date/time references with strict parsing to avoid false positives
+    # Common settings for parsing
+    parse_settings = {
+        "PREFER_DATES_FROM": "future",
+        "RELATIVE_BASE": now_in_user_tz.replace(tzinfo=None),
+        "TIMEZONE": str(user_tz),
+        "RETURN_AS_TIMEZONE_AWARE": True,
+    }
+
+    # Search for date/time references
+    # Use languages=['en'] to avoid false positives like "do" being parsed as
+    # Portuguese/Spanish "domingo" (Sunday)
     results = search_dates(
         message,
-        settings={
-            "PREFER_DATES_FROM": "future",
-            "RELATIVE_BASE": now_in_user_tz.replace(tzinfo=None),
-            "TIMEZONE": str(user_tz),
-            "RETURN_AS_TIMEZONE_AWARE": True,
-            "STRICT_PARSING": True,
-            "PARSERS": ["absolute-time", "timestamp"],
-        },
+        languages=["en"],
+        settings=parse_settings,
     )
 
     if not results:
@@ -112,19 +117,51 @@ def _parse_and_replace_times(message: str, user_tz: ZoneInfo) -> str:
     # This prevents index shifting issues
     replacements: list[tuple[int, int, str]] = []
 
-    for matched_text, parsed_dt in results:
-        # Find the position of this match in the message
-        start_idx = message.find(matched_text)
-        if start_idx == -1:
+    # Punctuation that can trail time expressions and confuse the parser
+    trailing_punct = "?!.,;:)"
+
+    # Prepositions that dateparser includes but shouldn't be replaced
+    # e.g., "at 8pm" should become "at <timestamp>" not "<timestamp>"
+    leading_prepositions = ("at ", "by ", "from ", "until ", "till ", "around ")
+
+    for matched_text, _ in results:
+        # Strip trailing punctuation that dateparser incorrectly includes
+        clean_match = matched_text.rstrip(trailing_punct)
+        if not clean_match:
+            continue
+
+        # Strip leading prepositions - keep them in the message
+        time_only = clean_match
+        for prep in leading_prepositions:
+            if clean_match.lower().startswith(prep):
+                time_only = clean_match[len(prep) :]
+                break
+
+        # Find the position of the time portion in the message
+        # We need to find clean_match first, then offset by any stripped preposition
+        full_start_idx = message.find(clean_match)
+        if full_start_idx == -1:
+            continue
+
+        # Calculate the actual start position (after preposition)
+        start_idx = full_start_idx + (len(clean_match) - len(time_only))
+
+        # Re-parse the clean match using dateparser.parse() which handles times
+        # correctly (search_dates has a bug where "7am" is parsed as July)
+        reparsed_dt = dateparser.parse(
+            clean_match, languages=["en"], settings=parse_settings
+        )
+        if not reparsed_dt:
             continue
 
         # Convert to Unix timestamp
-        unix_ts = int(parsed_dt.timestamp())
+        unix_ts = int(reparsed_dt.timestamp())
 
         # Create Discord timestamp (short time format)
         discord_ts = f"<t:{unix_ts}:t>"
 
-        replacements.append((start_idx, len(matched_text), discord_ts))
+        # Only replace the time portion, leaving preposition intact
+        replacements.append((start_idx, len(time_only), discord_ts))
 
     # Sort by start index descending to replace from end first
     replacements.sort(key=lambda x: x[0], reverse=True)
@@ -188,6 +225,10 @@ class TimeImpersonatorCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
+
+    async def cog_load(self) -> None:
+        """Called when the cog is loaded."""
+        LOGGER.info("Time Impersonator cog loaded")
 
     @property
     def firestore(self) -> FirestoreClient | None:
@@ -298,6 +339,12 @@ class TimeImpersonatorCog(commands.Cog):
             # Parse and replace times
             user_tz = ZoneInfo(user_tz_record.timezone)
             formatted_message = _parse_and_replace_times(message, user_tz)
+            LOGGER.info(
+                "Time parsing: input=%r, timezone=%s, output=%r",
+                message,
+                user_tz,
+                formatted_message,
+            )
 
             # Get or create webhook
             webhook = await _get_or_create_webhook(interaction.channel, self.bot.user)
@@ -309,10 +356,10 @@ class TimeImpersonatorCog(commands.Cog):
                 avatar_url=interaction.user.display_avatar.url,
             )
 
-            await interaction.followup.send("Message sent!", ephemeral=True, delete_after=3)
+            await interaction.followup.send("Message sent!", ephemeral=True)
 
         except Exception:
             LOGGER.exception("Failed to send time message")
             await interaction.followup.send(
-                "Failed to send message. Please try again.", ephemeral=True, delete_after=10
+                "Failed to send message. Please try again.", ephemeral=True
             )

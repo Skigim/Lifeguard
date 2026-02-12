@@ -38,6 +38,50 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 
+# --- Feature Registry ---
+# Central list of all features for autocomplete and validation
+# Format: (value, display_name, description, requires_setup)
+
+FEATURES: list[tuple[str, str, str, bool]] = [
+    ("content_review", "Content Review", "Review system with tickets, scoring, and leaderboards", True),
+    ("time_impersonator", "Time Impersonator", "Send messages with dynamic Discord timestamps", False),
+]
+
+
+def _get_feature_choices() -> list[app_commands.Choice[str]]:
+    """Get all features as Choice objects for autocomplete."""
+    return [
+        app_commands.Choice(name=f"{display} - {desc}", value=value)
+        for value, display, desc, _ in FEATURES
+    ]
+
+
+async def feature_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    """Autocomplete handler for feature parameter."""
+    current_lower = current.lower()
+    choices = []
+    for value, display, desc, _ in FEATURES:
+        if current_lower in value.lower() or current_lower in display.lower():
+            choices.append(app_commands.Choice(name=f"{display} - {desc}", value=value))
+    return choices[:25]
+
+
+def _is_valid_feature(value: str) -> bool:
+    """Check if a feature value is valid."""
+    return any(f[0] == value for f in FEATURES)
+
+
+def _feature_requires_setup(value: str) -> bool:
+    """Check if a feature requires interactive setup."""
+    for f in FEATURES:
+        if f[0] == value:
+            return f[3]
+    return False
+
+
 # --- Feature Check Decorators ---
 
 
@@ -118,129 +162,6 @@ class SubmitButtonView(discord.ui.View):
 
 
 # --- Interactive Config Views ---
-
-
-class EnableFeatureSelect(discord.ui.Select):
-    """Dynamic select for enabling features."""
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        self.cog = cog
-        options = [
-            discord.SelectOption(
-                label="Content Review",
-                value="content_review",
-                description="Review system with tickets, scoring, and leaderboards",
-                emoji="📝",
-            ),
-            discord.SelectOption(
-                label="Time Impersonator",
-                value="time_impersonator",
-                description="Send messages with dynamic Discord timestamps",
-                emoji="🕐",
-            ),
-        ]
-        # Only show Albion options if the cog is loaded
-        if cog.bot.get_cog("AlbionCog"):
-            options.extend([
-                discord.SelectOption(
-                    label="Albion Price Lookup",
-                    value="albion_prices",
-                    description="Look up item prices from Albion Data Project",
-                    emoji="💰",
-                ),
-                discord.SelectOption(
-                    label="Albion Builds",
-                    value="albion_builds",
-                    description="View saved Albion builds",
-                    emoji="⚔️",
-                ),
-            ])
-        super().__init__(placeholder="Select a feature to enable...", options=options)
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        if self.values[0] == "content_review":
-            view = ContentReviewSetupView(self.cog)
-            embed = discord.Embed(
-                title="📝 Content Review Setup",
-                description=(
-                    "Select the **ticket category** where review channels will be created.\n\n"
-                    "The submit button will be posted in the current channel."
-                ),
-                color=discord.Color.blue(),
-            )
-            await interaction.response.edit_message(embed=embed, view=view)
-        elif self.values[0] == "time_impersonator":
-            await self.cog._enable_time_impersonator(interaction)
-        elif self.values[0] == "albion_prices":
-            await self.cog._enable_albion_feature(interaction, "prices")
-        elif self.values[0] == "albion_builds":
-            await self.cog._enable_albion_feature(interaction, "builds")
-
-
-class EnableFeatureView(discord.ui.View):
-    """View with dropdown to select which feature to enable."""
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        super().__init__(timeout=120)
-        self.cog = cog
-        self.add_item(EnableFeatureSelect(cog))
-
-
-class DisableFeatureSelect(discord.ui.Select):
-    """Dynamic select for disabling features."""
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        self.cog = cog
-        options = [
-            discord.SelectOption(
-                label="Content Review",
-                value="content_review",
-                description="Disable the content review system",
-                emoji="📝",
-            ),
-            discord.SelectOption(
-                label="Time Impersonator",
-                value="time_impersonator",
-                description="Disable time impersonator feature",
-                emoji="🕐",
-            ),
-        ]
-        # Only show Albion options if the cog is loaded
-        if cog.bot.get_cog("AlbionCog"):
-            options.extend([
-                discord.SelectOption(
-                    label="Albion Price Lookup",
-                    value="albion_prices",
-                    description="Disable Albion price lookups",
-                    emoji="💰",
-                ),
-                discord.SelectOption(
-                    label="Albion Builds",
-                    value="albion_builds",
-                    description="Disable Albion builds",
-                    emoji="⚔️",
-                ),
-            ])
-        super().__init__(placeholder="Select a feature to disable...", options=options)
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        if self.values[0] == "content_review":
-            await self.cog._disable_content_review_feature(interaction)
-        elif self.values[0] == "time_impersonator":
-            await self.cog._disable_time_impersonator(interaction)
-        elif self.values[0] == "albion_prices":
-            await self.cog._disable_albion_feature(interaction, "prices")
-        elif self.values[0] == "albion_builds":
-            await self.cog._disable_albion_feature(interaction, "builds")
-
-
-class DisableFeatureView(discord.ui.View):
-    """View with dropdown to select which feature to disable."""
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        super().__init__(timeout=120)
-        self.cog = cog
-        self.add_item(DisableFeatureSelect(cog))
 
 
 class ContentReviewSetupView(discord.ui.View):
@@ -870,20 +791,20 @@ class ContentReviewCog(commands.Cog):
             )
             return
 
-        embed = discord.Embed(
-            title="🚀 Enable Feature",
-            description="Select a feature to enable from the dropdown below.",
-            color=discord.Color.green(),
-        )
-        view = EnableFeatureView(self)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+    # --- Main Interactive Commands ---
 
     @app_commands.command(
-        name="disable-feature",
-        description="Disable a bot feature",
+        name="enable-feature",
+        description="Enable a bot feature",
     )
-    async def disable_feature_command(self, interaction: discord.Interaction) -> None:
-        """Show feature disable menu."""
+    @app_commands.describe(feature="The feature to enable")
+    @app_commands.autocomplete(feature=feature_autocomplete)
+    async def enable_feature_command(
+        self,
+        interaction: discord.Interaction,
+        feature: str,
+    ) -> None:
+        """Enable a feature for this server."""
         if not interaction.guild:
             await interaction.response.send_message("Server only.", ephemeral=True)
             return
@@ -894,13 +815,73 @@ class ContentReviewCog(commands.Cog):
             )
             return
 
-        embed = discord.Embed(
-            title="🛑 Disable Feature",
-            description="Select a feature to disable from the dropdown below.",
-            color=discord.Color.red(),
-        )
-        view = DisableFeatureView(self)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        if not _is_valid_feature(feature):
+            await interaction.response.send_message(
+                f"Unknown feature: `{feature}`. Use autocomplete to select a valid feature.",
+                ephemeral=True,
+            )
+            return
+
+        # Features requiring setup show a wizard view
+        if _feature_requires_setup(feature):
+            if feature == "content_review":
+                view = ContentReviewSetupView(self)
+                embed = discord.Embed(
+                    title="📝 Content Review Setup",
+                    description=(
+                        "Select the **ticket category** where review channels will be created.\n\n"
+                        "The submit button will be posted in the current channel."
+                    ),
+                    color=discord.Color.blue(),
+                )
+                await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+                return
+
+        # Simple features enable directly
+        if feature == "time_impersonator":
+            await self._enable_time_impersonator(interaction, use_send=True)
+        elif feature == "albion_prices":
+            await self._enable_albion_feature(interaction, "prices")
+        elif feature == "albion_builds":
+            await self._enable_albion_feature(interaction, "builds")
+
+    @app_commands.command(
+        name="disable-feature",
+        description="Disable a bot feature",
+    )
+    @app_commands.describe(feature="The feature to disable")
+    @app_commands.autocomplete(feature=feature_autocomplete)
+    async def disable_feature_command(
+        self,
+        interaction: discord.Interaction,
+        feature: str,
+    ) -> None:
+        """Disable a feature for this server."""
+        if not interaction.guild:
+            await interaction.response.send_message("Server only.", ephemeral=True)
+            return
+
+        if not self._user_can_manage_bot(interaction):
+            await interaction.response.send_message(
+                "You don't have permission to manage bot settings.", ephemeral=True
+            )
+            return
+
+        if not _is_valid_feature(feature):
+            await interaction.response.send_message(
+                f"Unknown feature: `{feature}`. Use autocomplete to select a valid feature.",
+                ephemeral=True,
+            )
+            return
+
+        if feature == "content_review":
+            await self._disable_content_review_direct(interaction)
+        elif feature == "time_impersonator":
+            await self._disable_time_impersonator_direct(interaction)
+        elif feature == "albion_prices":
+            await self._disable_albion_feature_direct(interaction, "prices")
+        elif feature == "albion_builds":
+            await self._disable_albion_feature_direct(interaction, "builds")
 
     @app_commands.command(
         name="config",
@@ -1111,16 +1092,28 @@ class ContentReviewCog(commands.Cog):
             content="✅ Content review disabled.", embed=None, view=None
         )
 
-    async def _disable_content_review_feature(self, interaction: discord.Interaction) -> None:
-        """Fully disable content review feature (from disable-feature menu)."""
+    async def _disable_content_review_feature(
+        self,
+        interaction: discord.Interaction,
+        *,
+        use_send: bool = False,
+    ) -> None:
+        """Fully disable content review feature.
+        
+        Args:
+            interaction: The Discord interaction.
+            use_send: If True, use send_message. If False, use edit_message.
+        """
         if not interaction.guild:
             return
 
         config = repo.get_config(self.firestore, interaction.guild.id)
         if not config or not config.enabled:
-            await interaction.response.edit_message(
-                content="Content review is not enabled.", embed=None, view=None
-            )
+            msg = "Content review is not enabled."
+            if use_send:
+                await interaction.response.send_message(msg, ephemeral=True)
+            else:
+                await interaction.response.edit_message(content=msg, embed=None, view=None)
             return
 
         # Try to delete the sticky message
@@ -1140,22 +1133,36 @@ class ContentReviewCog(commands.Cog):
         config.sticky_message_id = None
         repo.save_config(self.firestore, config)
 
-        await interaction.response.edit_message(
-            content=(
-                "✅ **Content Review disabled!**\n\n"
-                "The feature has been turned off and the submit button removed.\n"
-                "Existing configuration is preserved. Use `/enable-feature` to re-enable it."
-            ),
-            embed=None,
-            view=None,
+        content = (
+            "✅ **Content Review disabled!**\n\n"
+            "The feature has been turned off and the submit button removed.\n"
+            "Existing configuration is preserved. Use `/enable-feature` to re-enable it."
         )
+        if use_send:
+            await interaction.response.send_message(content, ephemeral=True)
+        else:
+            await interaction.response.edit_message(content=content, embed=None, view=None)
 
         LOGGER.info("Content review disabled: guild=%s", interaction.guild.id)
 
+    async def _disable_content_review_direct(self, interaction: discord.Interaction) -> None:
+        """Disable content review (direct command flow)."""
+        await self._disable_content_review_feature(interaction, use_send=True)
+
     # --- Time Impersonator Helpers ---
 
-    async def _enable_time_impersonator(self, interaction: discord.Interaction) -> None:
-        """Enable time impersonator feature."""
+    async def _enable_time_impersonator(
+        self,
+        interaction: discord.Interaction,
+        *,
+        use_send: bool = False,
+    ) -> None:
+        """Enable time impersonator feature.
+        
+        Args:
+            interaction: The Discord interaction.
+            use_send: If True, use send_message. If False, use edit_message.
+        """
         if not interaction.guild:
             return
 
@@ -1165,22 +1172,32 @@ class ContentReviewCog(commands.Cog):
         config = TimeImpersonatorConfig(guild_id=interaction.guild.id, enabled=True)
         ti_repo.save_config(self.firestore, config)
 
-        await interaction.response.edit_message(
-            content=(
-                "✅ **Time Impersonator enabled!**\n\n"
-                "Users can now:\n"
-                "• `/tz` — Set their timezone\n"
-                "• `/time` — Send messages with dynamic timestamps\n\n"
-                "The bot needs **Manage Webhooks** permission in channels where `/time` is used."
-            ),
-            embed=None,
-            view=None,
+        content = (
+            "✅ **Time Impersonator enabled!**\n\n"
+            "Users can now:\n"
+            "• `/tz set` — Set their timezone\n"
+            "• `/time` — Send messages with dynamic timestamps\n\n"
+            "The bot needs **Manage Webhooks** permission in channels where `/time` is used."
         )
+        if use_send:
+            await interaction.response.send_message(content, ephemeral=True)
+        else:
+            await interaction.response.edit_message(content=content, embed=None, view=None)
 
         LOGGER.info("Time Impersonator enabled: guild=%s", interaction.guild.id)
 
-    async def _disable_time_impersonator(self, interaction: discord.Interaction) -> None:
-        """Disable time impersonator feature."""
+    async def _disable_time_impersonator(
+        self,
+        interaction: discord.Interaction,
+        *,
+        use_send: bool = False,
+    ) -> None:
+        """Disable time impersonator feature.
+        
+        Args:
+            interaction: The Discord interaction.
+            use_send: If True, use send_message. If False, use edit_message.
+        """
         if not interaction.guild:
             return
 
@@ -1189,21 +1206,27 @@ class ContentReviewCog(commands.Cog):
 
         config = ti_repo.get_config(self.firestore, interaction.guild.id)
         if not config or not config.enabled:
-            await interaction.response.edit_message(
-                content="Time Impersonator is not enabled.", embed=None, view=None
-            )
+            msg = "Time Impersonator is not enabled."
+            if use_send:
+                await interaction.response.send_message(msg, ephemeral=True)
+            else:
+                await interaction.response.edit_message(content=msg, embed=None, view=None)
             return
 
         config = TimeImpersonatorConfig(guild_id=interaction.guild.id, enabled=False)
         ti_repo.save_config(self.firestore, config)
 
-        await interaction.response.edit_message(
-            content="✅ **Time Impersonator disabled!**",
-            embed=None,
-            view=None,
-        )
+        content = "✅ **Time Impersonator disabled!**"
+        if use_send:
+            await interaction.response.send_message(content, ephemeral=True)
+        else:
+            await interaction.response.edit_message(content=content, embed=None, view=None)
 
         LOGGER.info("Time Impersonator disabled: guild=%s", interaction.guild.id)
+
+    async def _disable_time_impersonator_direct(self, interaction: discord.Interaction) -> None:
+        """Disable time impersonator (direct command flow)."""
+        await self._disable_time_impersonator(interaction, use_send=True)
 
     # --- Bot Admin Role Helpers ---
 
