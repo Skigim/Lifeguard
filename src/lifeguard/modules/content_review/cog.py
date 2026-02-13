@@ -45,6 +45,8 @@ LOGGER = logging.getLogger(__name__)
 FEATURES: list[tuple[str, str, str, bool]] = [
     ("content_review", "Content Review", "Review system with tickets, scoring, and leaderboards", True),
     ("time_impersonator", "Time Impersonator", "Send messages with dynamic Discord timestamps", False),
+    ("albion_prices", "Albion Prices", "Look up Albion Online market prices", False),
+    ("albion_builds", "Albion Builds", "Share and browse Albion Online builds", False),
 ]
 
 
@@ -841,9 +843,9 @@ class ContentReviewCog(commands.Cog):
         if feature == "time_impersonator":
             await self._enable_time_impersonator(interaction, use_send=True)
         elif feature == "albion_prices":
-            await self._enable_albion_feature(interaction, "prices")
+            await self._enable_albion_feature(interaction, "prices", use_send=True)
         elif feature == "albion_builds":
-            await self._enable_albion_feature(interaction, "builds")
+            await self._enable_albion_feature(interaction, "builds", use_send=True)
 
     @app_commands.command(
         name="disable-feature",
@@ -1228,6 +1230,44 @@ class ContentReviewCog(commands.Cog):
         """Disable time impersonator (direct command flow)."""
         await self._disable_time_impersonator(interaction, use_send=True)
 
+    async def _disable_albion_feature_direct(
+        self, interaction: discord.Interaction, feature: str
+    ) -> None:
+        """Disable an Albion feature (direct command flow)."""
+        if not interaction.guild:
+            return
+
+        features = albion_repo.get_guild_features(self.firestore, interaction.guild.id)
+        if not features:
+            await interaction.response.send_message(
+                "No Albion features are currently configured.", ephemeral=True
+            )
+            return
+
+        if feature == "prices":
+            if not features.albion_prices_enabled:
+                await interaction.response.send_message(
+                    "Albion Price Lookup is not currently enabled.", ephemeral=True
+                )
+                return
+            features.albion_prices_enabled = False
+            feature_name = "Albion Price Lookup"
+        else:
+            if not features.albion_builds_enabled:
+                await interaction.response.send_message(
+                    "Albion Builds is not currently enabled.", ephemeral=True
+                )
+                return
+            features.albion_builds_enabled = False
+            feature_name = "Albion Builds"
+
+        albion_repo.save_guild_features(self.firestore, features)
+
+        await interaction.response.send_message(
+            f"✅ **{feature_name} disabled!**", ephemeral=True
+        )
+        LOGGER.info("Albion %s disabled: guild=%s", feature, interaction.guild.id)
+
     # --- Bot Admin Role Helpers ---
 
     async def _show_bot_admin_roles(self, interaction: discord.Interaction) -> None:
@@ -1382,9 +1422,19 @@ class ContentReviewCog(commands.Cog):
         await interaction.response.edit_message(embed=embed, view=None)
 
     async def _enable_albion_feature(
-        self, interaction: discord.Interaction, feature: str
+        self,
+        interaction: discord.Interaction,
+        feature: str,
+        *,
+        use_send: bool = False,
     ) -> None:
-        """Enable an Albion feature (prices or builds)."""
+        """Enable an Albion feature (prices or builds).
+
+        Args:
+            interaction: The Discord interaction.
+            feature: Which feature to enable ("prices" or "builds").
+            use_send: If True, use send_message. If False, use edit_message.
+        """
         if not interaction.guild:
             return
 
@@ -1401,11 +1451,12 @@ class ContentReviewCog(commands.Cog):
 
         albion_repo.save_guild_features(self.firestore, features)
 
-        await interaction.response.edit_message(
-            content=f"✅ **{feature_name} enabled!**\n\nUsers can now use the related commands.",
-            embed=None,
-            view=None,
-        )
+        content = f"✅ **{feature_name} enabled!**\n\nUsers can now use the related commands."
+        if use_send:
+            await interaction.response.send_message(content, ephemeral=True)
+        else:
+            await interaction.response.edit_message(content=content, embed=None, view=None)
+
         LOGGER.info(
             "Albion %s enabled: guild=%s", feature, interaction.guild.id
         )

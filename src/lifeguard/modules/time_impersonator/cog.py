@@ -124,6 +124,8 @@ def _parse_and_replace_times(message: str, user_tz: ZoneInfo) -> str:
     # e.g., "at 8pm" should become "at <timestamp>" not "<timestamp>"
     leading_prepositions = ("at ", "by ", "from ", "until ", "till ", "around ")
 
+    search_offset = 0
+
     for matched_text, _ in results:
         # Strip trailing punctuation that dateparser incorrectly includes
         clean_match = matched_text.rstrip(trailing_punct)
@@ -138,13 +140,16 @@ def _parse_and_replace_times(message: str, user_tz: ZoneInfo) -> str:
                 break
 
         # Find the position of the time portion in the message
-        # We need to find clean_match first, then offset by any stripped preposition
-        full_start_idx = message.find(clean_match)
+        # Search from search_offset so duplicate strings resolve to successive occurrences
+        full_start_idx = message.find(clean_match, search_offset)
         if full_start_idx == -1:
             continue
 
         # Calculate the actual start position (after preposition)
         start_idx = full_start_idx + (len(clean_match) - len(time_only))
+
+        # Advance offset past this match for the next iteration
+        search_offset = full_start_idx + len(clean_match)
 
         # Re-parse the clean match using dateparser.parse() which handles times
         # correctly (search_dates has a bug where "7am" is parsed as July)
@@ -339,11 +344,11 @@ class TimeImpersonatorCog(commands.Cog):
             # Parse and replace times
             user_tz = ZoneInfo(user_tz_record.timezone)
             formatted_message = _parse_and_replace_times(message, user_tz)
-            LOGGER.info(
-                "Time parsing: input=%r, timezone=%s, output=%r",
-                message,
+            LOGGER.debug(
+                "Time parsing: input_len=%d, timezone=%s, output_len=%d",
+                len(message),
                 user_tz,
-                formatted_message,
+                len(formatted_message),
             )
 
             # Get or create webhook
