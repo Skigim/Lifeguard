@@ -1025,12 +1025,7 @@ class ContentReviewCog(commands.Cog):
         repo.save_config(self.firestore, config)
 
         # Send sticky message with submit button
-        sticky_embed = self._build_sticky_embed(config)
-        submit_button_view = SubmitButtonView(
-            label=config.sticky_button_label,
-            emoji=config.sticky_button_emoji,
-        )
-        sticky_msg = await interaction.channel.send(embed=sticky_embed, view=submit_button_view)
+        sticky_msg = await self._post_sticky_message(interaction.channel, config)
         
         # Save the message ID for later cleanup
         config.sticky_message_id = sticky_msg.id
@@ -1184,6 +1179,17 @@ class ContentReviewCog(commands.Cog):
         except (discord.NotFound, discord.Forbidden):
             pass
 
+    async def _post_sticky_message(
+        self, channel: discord.TextChannel, config: ContentReviewConfig
+    ) -> discord.Message:
+        """Post the sticky submit message and return it."""
+        sticky_embed = self._build_sticky_embed(config)
+        submit_button_view = SubmitButtonView(
+            label=config.sticky_button_label,
+            emoji=config.sticky_button_emoji,
+        )
+        return await channel.send(embed=sticky_embed, view=submit_button_view)
+
     async def _try_update_sticky(
         self, guild: discord.Guild, config: ContentReviewConfig
     ) -> bool:
@@ -1209,6 +1215,31 @@ class ContentReviewCog(commands.Cog):
             return True
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             return False
+
+    async def _sync_sticky_message(
+        self, guild: discord.Guild, config: ContentReviewConfig
+    ) -> str:
+        """Sync sticky message after config changes.
+
+        Returns one of: "updated", "reposted", "failed".
+        """
+        if await self._try_update_sticky(guild, config):
+            return "updated"
+
+        if not config.submission_channel_id:
+            return "failed"
+
+        channel = guild.get_channel(config.submission_channel_id)
+        if not channel or not isinstance(channel, discord.TextChannel):
+            return "failed"
+
+        try:
+            sticky_msg = await self._post_sticky_message(channel, config)
+            config.sticky_message_id = sticky_msg.id
+            repo.save_config(self.firestore, config)
+            return "reposted"
+        except (discord.Forbidden, discord.HTTPException):
+            return "failed"
 
     async def _disable_content_review_direct(self, interaction: discord.Interaction) -> None:
         """Disable content review (direct command flow)."""
@@ -1836,18 +1867,18 @@ class ContentReviewCog(commands.Cog):
 
         repo.save_config(self.firestore, config)
 
-        # Try to live-update the existing sticky message
-        updated_live = await self._try_update_sticky(interaction.guild, config)
-        repost_hint = (
-            ""
-            if updated_live
-            else "\n\n💡 Use **Re-post Submit Button** in `/config` to update the live message."
-        )
+        sync_result = await self._sync_sticky_message(interaction.guild, config)
+        if sync_result == "updated":
+            sync_note = ""
+        elif sync_result == "reposted":
+            sync_note = "\n\n✅ Sticky message was missing, so a new one was posted automatically."
+        else:
+            sync_note = "\n\n💡 Use **Re-post Submit Button** in `/config` to update the live message."
 
         await interaction.response.send_message(
             "✅ Updated sticky message:\n"
             + "\n".join(f"• {c}" for c in changes)
-            + repost_hint,
+            + sync_note,
             ephemeral=True,
         )
 
@@ -1914,12 +1945,10 @@ class ContentReviewCog(commands.Cog):
         config.submission_channel_id = interaction.channel.id
         repo.save_config(self.firestore, config)
 
-        sticky_embed = self._build_sticky_embed(config)
-        submit_button_view = SubmitButtonView(
-            label=config.sticky_button_label,
-            emoji=config.sticky_button_emoji,
-        )
-        await interaction.channel.send(embed=sticky_embed, view=submit_button_view)
+        sticky_msg = await self._post_sticky_message(interaction.channel, config)
+        config.sticky_message_id = sticky_msg.id
+        repo.save_config(self.firestore, config)
+
         await interaction.edit_original_response(content="✅ Submit button posted!")
 
     # --- User Commands ---
