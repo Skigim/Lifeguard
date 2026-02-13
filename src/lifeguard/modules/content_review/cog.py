@@ -28,7 +28,31 @@ from lifeguard.modules.content_review.views.review_wizard import (
     DraftReview,
     ReviewWizardView,
 )
+from lifeguard.modules.content_review.views.config_ui import (
+    AddBotAdminRoleView,
+    AddCategoryModal,
+    AddFieldModal,
+    AddRoleView,
+    AlbionConfigView,
+    BackToAlbionView,
+    BackToContentReviewView,
+    BackToGeneralView,
+    ConfigFeatureSelectView,
+    ContentReviewConfigView,
+    ContentReviewSetupView,
+    GeneralConfigView,
+    RemoveBotAdminRoleView,
+    RemoveCategoryView,
+    RemoveFieldView,
+    RemoveRoleView,
+    SettingsView,
+)
 from lifeguard.modules.content_review.views.submission_modal import SubmissionModal
+from lifeguard.modules.content_review.sticky_service import (
+    post_sticky_message,
+    sync_sticky_message,
+    try_delete_sticky,
+)
 from lifeguard.modules.albion import repo as albion_repo
 from lifeguard.exceptions import FeatureDisabledError
 
@@ -138,7 +162,6 @@ class CloseTicketButton(discord.ui.View):
     def __init__(self, submission_id: str) -> None:
         super().__init__(timeout=None)
         self.submission_id = submission_id
-        # Set the custom_id with submission_id for the button
         self.close_ticket_btn.custom_id = f"content_review:close_ticket:{submission_id}"
 
     @discord.ui.button(
@@ -154,597 +177,7 @@ class CloseTicketButton(discord.ui.View):
         pass
 
 
-class SubmitButtonView(discord.ui.View):
-    """Persistent view with Submit Content button for sticky message."""
 
-    def __init__(self, label: str = "Submit Content", emoji: str = "📝") -> None:
-        super().__init__(timeout=None)
-        # Create button dynamically with custom label/emoji
-        button = discord.ui.Button(
-            label=label,
-            style=discord.ButtonStyle.primary,
-            custom_id="content_review:submit_content",
-            emoji=emoji or None,
-        )
-        button.callback = self._button_callback
-        self.add_item(button)
-
-    async def _button_callback(self, interaction: discord.Interaction) -> None:
-        # This is handled by the cog's persistent view handler
-        pass
-
-
-# --- Interactive Config Views ---
-
-
-class ContentReviewSetupView(discord.ui.View):
-    """View for setting up content review - category and role selection."""
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        super().__init__(timeout=120)
-        self.cog = cog
-        self.selected_category: discord.CategoryChannel | None = None
-        self.selected_role: discord.Role | None = None
-
-    @discord.ui.select(
-        cls=discord.ui.ChannelSelect,
-        placeholder="Select ticket category...",
-        channel_types=[discord.ChannelType.category],
-    )
-    async def category_select(
-        self, interaction: discord.Interaction, select: discord.ui.ChannelSelect
-    ) -> None:
-        self.selected_category = select.values[0]  # type: ignore
-        await interaction.response.defer()
-
-    @discord.ui.select(
-        cls=discord.ui.RoleSelect,
-        placeholder="Select reviewer role (optional)...",
-        min_values=0,
-        max_values=1,
-    )
-    async def role_select(
-        self, interaction: discord.Interaction, select: discord.ui.RoleSelect
-    ) -> None:
-        self.selected_role = select.values[0] if select.values else None
-        await interaction.response.defer()
-
-    @discord.ui.button(label="Enable Content Review", style=discord.ButtonStyle.success)
-    async def confirm_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        if not self.selected_category:
-            await interaction.response.send_message(
-                "Please select a ticket category first.", ephemeral=True
-            )
-            return
-
-        await self.cog._enable_content_review(
-            interaction, self.selected_category, self.selected_role
-        )
-
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
-    async def cancel_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await interaction.response.edit_message(
-            content="Setup cancelled.", embed=None, view=None
-        )
-
-
-class ConfigFeatureSelect(discord.ui.Select):
-    """Dynamic select for choosing which feature to configure."""
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        self.cog = cog
-        options = [
-            discord.SelectOption(
-                label="General Settings",
-                value="general",
-                description="Bot user roles and general settings",
-                emoji="⚙️",
-            ),
-            discord.SelectOption(
-                label=_FEATURE_CONTENT_REVIEW,
-                value="content_review",
-                description="Configure the content review system",
-                emoji="📝",
-            ),
-        ]
-        # Only show Albion options if the cog is loaded
-        if cog.bot.get_cog("AlbionCog"):
-            options.append(
-                discord.SelectOption(
-                    label="Albion Features",
-                    value="albion",
-                    description="Configure Albion price lookup and builds",
-                    emoji="⚔️",
-                )
-            )
-        super().__init__(placeholder="Select a feature to configure...", options=options)
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        if self.values[0] == "general":
-            embed = discord.Embed(
-                title="⚙️ General Settings",
-                description="Configure general bot settings.",
-                color=discord.Color.blue(),
-            )
-            view = GeneralConfigView(self.cog)
-            await interaction.response.edit_message(embed=embed, view=view)
-        elif self.values[0] == "content_review":
-            config = repo.get_config(self.cog.firestore, interaction.guild.id)
-            if not config or not config.enabled:
-                await interaction.response.edit_message(
-                    content="Content Review is not enabled. Use `/enable-feature` first.",
-                    embed=None,
-                    view=None,
-                )
-                return
-            embed = discord.Embed(
-                title="📝 Content Review Config",
-                description="Select a configuration action from the dropdown below.",
-                color=discord.Color.blue(),
-            )
-            view = ContentReviewConfigView(self.cog)
-            await interaction.response.edit_message(embed=embed, view=view)
-        elif self.values[0] == "albion":
-            embed = discord.Embed(
-                title="⚔️ Albion Config",
-                description="Select a configuration action from the dropdown below.",
-                color=discord.Color.blue(),
-            )
-            view = AlbionConfigView(self.cog)
-            await interaction.response.edit_message(embed=embed, view=view)
-
-
-class ConfigFeatureSelectView(discord.ui.View):
-    """First level config menu - select which feature to configure."""
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        super().__init__(timeout=120)
-        self.cog = cog
-        self.add_item(ConfigFeatureSelect(cog))
-
-
-class GeneralConfigView(discord.ui.View):
-    """Config menu for general bot settings."""
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        super().__init__(timeout=120)
-        self.cog = cog
-
-    @discord.ui.select(
-        placeholder="Select a configuration action...",
-        options=[
-            discord.SelectOption(label="View Bot Admin Roles", value="view", emoji="📋"),
-            discord.SelectOption(label="Add Bot Admin Role", value="add_role", emoji="➕"),
-            discord.SelectOption(label="Remove Bot Admin Role", value="remove_role", emoji="➖"),
-            discord.SelectOption(label="Clear All Bot Admin Roles", value="clear_roles", emoji="🗑️"),
-        ],
-    )
-    async def action_select(
-        self, interaction: discord.Interaction, select: discord.ui.Select
-    ) -> None:
-        action = select.values[0]
-
-        if action == "view":
-            await self.cog._show_bot_admin_roles(interaction)
-        elif action == "add_role":
-            view = AddBotAdminRoleView(self.cog)
-            await interaction.response.edit_message(
-                content="Select a role to add as a bot admin role:", embed=None, view=view
-            )
-        elif action == "remove_role":
-            await self.cog._show_remove_bot_admin_role_view(interaction)
-        elif action == "clear_roles":
-            await self.cog._clear_bot_admin_roles(interaction)
-
-
-class AddBotAdminRoleView(discord.ui.View):
-    """View for adding a bot admin role."""
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        super().__init__(timeout=60)
-        self.cog = cog
-
-    @discord.ui.select(
-        cls=discord.ui.RoleSelect,
-        placeholder="Select a role to add...",
-    )
-    async def role_select(
-        self, interaction: discord.Interaction, select: discord.ui.RoleSelect
-    ) -> None:
-        role = select.values[0]
-        await self.cog._add_bot_admin_role(interaction, role)
-
-
-class RemoveBotAdminRoleView(discord.ui.View):
-    """View for removing a bot admin role."""
-
-    def __init__(self, cog: "ContentReviewCog", role_ids: list[int]) -> None:
-        super().__init__(timeout=60)
-        self.cog = cog
-        self.role_ids = role_ids
-
-    @discord.ui.select(
-        cls=discord.ui.RoleSelect,
-        placeholder="Select a role to remove...",
-    )
-    async def role_select(
-        self, interaction: discord.Interaction, select: discord.ui.RoleSelect
-    ) -> None:
-        role = select.values[0]
-        await self.cog._remove_bot_admin_role(interaction, role)
-
-
-class ContentReviewConfigView(discord.ui.View):
-    """Config menu for Content Review feature."""
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        super().__init__(timeout=120)
-        self.cog = cog
-
-    @discord.ui.select(
-        placeholder="Select a configuration action...",
-        options=[
-            discord.SelectOption(label="View Configuration", value="view", emoji="📋"),
-            discord.SelectOption(label="Disable Content Review", value="disable", emoji="❌"),
-            discord.SelectOption(label="Add Reviewer Role", value="add_role", emoji="➕"),
-            discord.SelectOption(label="Remove Reviewer Role", value="remove_role", emoji="➖"),
-            discord.SelectOption(label="Add Submission Field", value="add_field", emoji="📝"),
-            discord.SelectOption(label="Remove Submission Field", value="remove_field", emoji="🗑️"),
-            discord.SelectOption(label="Add Review Category", value="add_category", emoji="⭐"),
-            discord.SelectOption(label="Remove Review Category", value="remove_category", emoji="🗑️"),
-            discord.SelectOption(label="Customize Sticky Message", value="set_sticky", emoji="📌"),
-            discord.SelectOption(label="Other Settings", value="set_settings", emoji="⚙️"),
-            discord.SelectOption(label="Re-post Submit Button", value="repost", emoji="🔄"),
-        ],
-    )
-    async def action_select(
-        self, interaction: discord.Interaction, select: discord.ui.Select
-    ) -> None:
-        action = select.values[0]
-
-        if action == "view":
-            await self.cog._show_config(interaction)
-        elif action == "disable":
-            await self.cog._disable_content_review(interaction)
-        elif action == "add_role":
-            view = AddRoleView(self.cog)
-            await interaction.response.edit_message(
-                content="Select a role to add as a reviewer:", embed=None, view=view
-            )
-        elif action == "remove_role":
-            await self.cog._show_remove_role_view(interaction)
-        elif action == "add_field":
-            modal = AddFieldModal(self.cog)
-            await interaction.response.send_modal(modal)
-        elif action == "remove_field":
-            await self.cog._show_remove_field_view(interaction)
-        elif action == "add_category":
-            modal = AddCategoryModal(self.cog)
-            await interaction.response.send_modal(modal)
-        elif action == "remove_category":
-            await self.cog._show_remove_category_view(interaction)
-        elif action == "set_sticky":
-            modal = SetStickyModal(self.cog)
-            await interaction.response.send_modal(modal)
-        elif action == "set_settings":
-            view = SettingsView(self.cog)
-            await interaction.response.edit_message(
-                content="Configure settings:", embed=None, view=view
-            )
-        elif action == "repost":
-            await self.cog._repost_button(interaction)
-
-
-class AlbionConfigView(discord.ui.View):
-    """Config menu for Albion features."""
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        super().__init__(timeout=120)
-        self.cog = cog
-
-    @discord.ui.select(
-        placeholder="Select a configuration action...",
-        options=[
-            discord.SelectOption(label="View Status", value="view", emoji="📋"),
-            discord.SelectOption(label="Enable Price Lookup", value="enable_prices", emoji="💰"),
-            discord.SelectOption(label="Disable Price Lookup", value="disable_prices", emoji="❌"),
-            discord.SelectOption(label="Enable Builds", value="enable_builds", emoji="⚔️"),
-            discord.SelectOption(label="Disable Builds", value="disable_builds", emoji="❌"),
-        ],
-    )
-    async def action_select(
-        self, interaction: discord.Interaction, select: discord.ui.Select
-    ) -> None:
-        action = select.values[0]
-
-        if action == "view":
-            await self.cog._show_albion_status(interaction)
-        elif action == "enable_prices":
-            await self.cog._enable_albion_feature(interaction, "prices")
-        elif action == "disable_prices":
-            await self.cog._disable_albion_feature(interaction, "prices")
-        elif action == "enable_builds":
-            await self.cog._enable_albion_feature(interaction, "builds")
-        elif action == "disable_builds":
-            await self.cog._disable_albion_feature(interaction, "builds")
-
-
-class AddRoleView(discord.ui.View):
-    """View for adding a reviewer role."""
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        super().__init__(timeout=60)
-        self.cog = cog
-
-    @discord.ui.select(
-        cls=discord.ui.RoleSelect,
-        placeholder="Select a role to add...",
-    )
-    async def role_select(
-        self, interaction: discord.Interaction, select: discord.ui.RoleSelect
-    ) -> None:
-        role = select.values[0]
-        await self.cog._add_reviewer_role(interaction, role)
-
-
-class RemoveRoleView(discord.ui.View):
-    """View for removing a reviewer role."""
-
-    def __init__(self, cog: "ContentReviewCog", role_ids: list[int]) -> None:
-        super().__init__(timeout=60)
-        self.cog = cog
-        self.role_ids = role_ids
-
-    @discord.ui.select(
-        cls=discord.ui.RoleSelect,
-        placeholder="Select a role to remove...",
-    )
-    async def role_select(
-        self, interaction: discord.Interaction, select: discord.ui.RoleSelect
-    ) -> None:
-        role = select.values[0]
-        await self.cog._remove_reviewer_role(interaction, role)
-
-
-class AddFieldModal(discord.ui.Modal, title="Add Submission Field"):
-    """Modal for adding a submission field."""
-
-    field_id = discord.ui.TextInput(
-        label="Field ID",
-        placeholder="e.g., game_link",
-        max_length=50,
-    )
-    label = discord.ui.TextInput(
-        label="Display Label",
-        placeholder="e.g., Game Link",
-        max_length=45,
-    )
-    field_type = discord.ui.TextInput(
-        label="Field Type",
-        placeholder="short_text, paragraph, or url",
-        default="short_text",
-        max_length=20,
-    )
-    placeholder = discord.ui.TextInput(
-        label="Placeholder Text",
-        placeholder="Hint text shown in the input",
-        required=False,
-        max_length=100,
-    )
-    required = discord.ui.TextInput(
-        label="Required? (yes/no)",
-        placeholder="yes",
-        default="yes",
-        max_length=3,
-    )
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        super().__init__()
-        self.cog = cog
-
-    async def on_submit(self, interaction: discord.Interaction) -> None:
-        field_type = self.field_type.value.lower().strip()
-        if field_type not in ("short_text", "paragraph", "url"):
-            field_type = "short_text"
-
-        is_required = self.required.value.lower().strip() in ("yes", "y", "true", "1")
-
-        await self.cog._add_field(
-            interaction,
-            field_id=self.field_id.value.strip(),
-            label=self.label.value.strip(),
-            field_type=field_type,
-            placeholder=self.placeholder.value.strip(),
-            required=is_required,
-        )
-
-
-class RemoveFieldView(discord.ui.View):
-    """View for removing a submission field."""
-
-    def __init__(self, cog: "ContentReviewCog", fields: list[SubmissionField]) -> None:
-        super().__init__(timeout=60)
-        self.cog = cog
-
-        # Build options from existing fields
-        options = [
-            discord.SelectOption(label=f.label, value=f.id, description=f"ID: {f.id}")
-            for f in fields
-        ]
-        self.field_select.options = options
-
-    @discord.ui.select(placeholder="Select a field to remove...")
-    async def field_select(
-        self, interaction: discord.Interaction, select: discord.ui.Select
-    ) -> None:
-        await self.cog._remove_field(interaction, select.values[0])
-
-
-class AddCategoryModal(discord.ui.Modal, title="Add Review Category"):
-    """Modal for adding a review category."""
-
-    category_id = discord.ui.TextInput(
-        label="Category ID",
-        placeholder="e.g., gameplay",
-        max_length=50,
-    )
-    name = discord.ui.TextInput(
-        label="Display Name",
-        placeholder="e.g., Gameplay",
-        max_length=50,
-    )
-    description = discord.ui.TextInput(
-        label="Description (help text for reviewers)",
-        placeholder="How well did the player perform?",
-        required=False,
-        max_length=200,
-    )
-    score_range = discord.ui.TextInput(
-        label="Score Range (min-max)",
-        placeholder="1-5",
-        default="1-5",
-        max_length=10,
-    )
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        super().__init__()
-        self.cog = cog
-
-    async def on_submit(self, interaction: discord.Interaction) -> None:
-        # Parse score range
-        try:
-            parts = self.score_range.value.split("-")
-            min_score = int(parts[0].strip())
-            max_score = int(parts[1].strip()) if len(parts) > 1 else 5
-        except (ValueError, IndexError):
-            min_score, max_score = 1, 5
-
-        await self.cog._add_category(
-            interaction,
-            category_id=self.category_id.value.strip(),
-            name=self.name.value.strip(),
-            description=self.description.value.strip(),
-            min_score=min_score,
-            max_score=max_score,
-        )
-
-
-class RemoveCategoryView(discord.ui.View):
-    """View for removing a review category."""
-
-    def __init__(self, cog: "ContentReviewCog", categories: list[ReviewCategory]) -> None:
-        super().__init__(timeout=60)
-        self.cog = cog
-
-        options = [
-            discord.SelectOption(label=c.name, value=c.id, description=f"ID: {c.id}")
-            for c in categories
-        ]
-        self.category_select.options = options
-
-    @discord.ui.select(placeholder="Select a category to remove...")
-    async def category_select(
-        self, interaction: discord.Interaction, select: discord.ui.Select
-    ) -> None:
-        await self.cog._remove_category(interaction, select.values[0])
-
-
-class SetStickyModal(discord.ui.Modal, title="Customize Sticky Message"):
-    """Modal for customizing the sticky submit message."""
-
-    sticky_title = discord.ui.TextInput(
-        label="Title",
-        placeholder="📥 Content Review",
-        required=False,
-        max_length=100,
-    )
-    sticky_description = discord.ui.TextInput(
-        label="Description",
-        placeholder="Submit your content for feedback!",
-        style=discord.TextStyle.paragraph,
-        required=False,
-        max_length=500,
-    )
-    button_label = discord.ui.TextInput(
-        label="Button Label",
-        placeholder="Submit Content",
-        required=False,
-        max_length=50,
-    )
-    button_emoji = discord.ui.TextInput(
-        label="Button Emoji",
-        placeholder="📝",
-        required=False,
-        max_length=10,
-    )
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        super().__init__()
-        self.cog = cog
-
-    async def on_submit(self, interaction: discord.Interaction) -> None:
-        await self.cog._set_sticky(
-            interaction,
-            title=self.sticky_title.value.strip() or None,
-            description=self.sticky_description.value.strip() or None,
-            button_label=self.button_label.value.strip() or None,
-            button_emoji=self.button_emoji.value.strip() or None,
-        )
-
-
-class SettingsView(discord.ui.View):
-    """View for configuring misc settings."""
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        super().__init__(timeout=60)
-        self.cog = cog
-
-    @discord.ui.select(
-        placeholder="Select a setting to change...",
-        options=[
-            discord.SelectOption(label="Toggle DM on Complete", value="dm", emoji="📬"),
-            discord.SelectOption(label="Toggle Leaderboard", value="leaderboard", emoji="🏆"),
-            discord.SelectOption(label="Set Review Timeout", value="timeout", emoji="⏱️"),
-        ],
-    )
-    async def setting_select(
-        self, interaction: discord.Interaction, select: discord.ui.Select
-    ) -> None:
-        setting = select.values[0]
-
-        if setting == "dm":
-            await self.cog._toggle_dm(interaction)
-        elif setting == "leaderboard":
-            await self.cog._toggle_leaderboard(interaction)
-        elif setting == "timeout":
-            modal = TimeoutModal(self.cog)
-            await interaction.response.send_modal(modal)
-
-
-class TimeoutModal(discord.ui.Modal, title="Set Review Timeout"):
-    """Modal for setting review timeout."""
-
-    timeout_minutes = discord.ui.TextInput(
-        label="Timeout (minutes)",
-        placeholder="15",
-        default="15",
-        max_length=5,
-    )
-
-    def __init__(self, cog: "ContentReviewCog") -> None:
-        super().__init__()
-        self.cog = cog
-
-    async def on_submit(self, interaction: discord.Interaction) -> None:
-        try:
-            minutes = int(self.timeout_minutes.value.strip())
-        except ValueError:
-            minutes = 15
-        await self.cog._set_timeout(interaction, minutes)
 
 
 class _CloseTicketConfirmView(discord.ui.View):
@@ -799,29 +232,6 @@ class ContentReviewCog(commands.Cog):
         else:
             await interaction.response.edit_message(content=content, embed=None, view=None)
 
-    @staticmethod
-    def _build_sticky_embed(config: ContentReviewConfig) -> discord.Embed:
-        """Build the sticky submit-button embed from config."""
-        embed = discord.Embed(
-            title=config.sticky_title,
-            description=config.sticky_description,
-            color=discord.Color.blue(),
-        )
-        embed.add_field(
-            name="\U0001f4cb How it works",
-            value=(
-                f"1. Click **{config.sticky_button_label}** below\n"
-                "2. Fill out the form with your content details\n"
-                "3. A private ticket will be created for your review\n"
-                "4. Reviewers will provide feedback in your ticket"
-            ),
-            inline=False,
-        )
-        embed.set_footer(
-            text="\u26a0\ufe0f By submitting, you agree to receive constructive feedback on your content."
-        )
-        return embed
-
     def _user_can_manage_bot(self, interaction: discord.Interaction) -> bool:
         """Check if user has permission to manage bot settings.
         
@@ -844,6 +254,38 @@ class ContentReviewCog(commands.Cog):
         # Check if user has any of the allowed roles
         user_role_ids = {role.id for role in interaction.user.roles}
         return bool(user_role_ids & set(features.bot_admin_role_ids))
+
+    @staticmethod
+    def _extract_discord_id(value: str) -> int | None:
+        """Extract a Discord snowflake from raw text or mention syntax."""
+        digits = "".join(ch for ch in value if ch.isdigit())
+        if not digits:
+            return None
+        try:
+            return int(digits)
+        except ValueError:
+            return None
+
+    def _resolve_role_from_input(
+        self, guild: discord.Guild, value: str
+    ) -> discord.Role | None:
+        """Resolve a role from a role ID or mention string."""
+        role_id = self._extract_discord_id(value)
+        if role_id is None:
+            return None
+        return guild.get_role(role_id)
+
+    def _resolve_category_from_input(
+        self, guild: discord.Guild, value: str
+    ) -> discord.CategoryChannel | None:
+        """Resolve a category from a channel ID or mention string."""
+        category_id = self._extract_discord_id(value)
+        if category_id is None:
+            return None
+        channel = guild.get_channel(category_id)
+        if isinstance(channel, discord.CategoryChannel):
+            return channel
+        return None
 
     async def cog_load(self) -> None:
         """Register persistent views on cog load."""
@@ -959,57 +401,133 @@ class ContentReviewCog(commands.Cog):
             )
             return
 
-        embed = discord.Embed(
-            title="⚙️ Configuration",
-            description="Select a feature to configure from the dropdown below.",
-            color=discord.Color.blue(),
-        )
-        view = ConfigFeatureSelectView(self)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await self._show_config_home(interaction, use_send=True)
 
     # --- Helper Methods for Interactive Views ---
+
+    @staticmethod
+    def _build_config_home_embed() -> discord.Embed:
+        return discord.Embed(
+            title="⚙️ Configuration",
+            description="Use the buttons below to configure bot features.",
+            color=discord.Color.blue(),
+        )
+
+    @staticmethod
+    def _build_general_embed() -> discord.Embed:
+        return discord.Embed(
+            title="⚙️ General Settings",
+            description="Use the buttons below to configure general bot settings.",
+            color=discord.Color.blue(),
+        )
+
+    @staticmethod
+    def _build_content_review_embed() -> discord.Embed:
+        return discord.Embed(
+            title="📝 Content Review Config",
+            description="Use the buttons below to configure Content Review.",
+            color=discord.Color.blue(),
+        )
+
+    @staticmethod
+    def _build_albion_embed() -> discord.Embed:
+        return discord.Embed(
+            title="⚔️ Albion Config",
+            description="Use the buttons below to configure Albion features.",
+            color=discord.Color.blue(),
+        )
+
+    async def _show_config_home(
+        self, interaction: discord.Interaction, *, use_send: bool = False
+    ) -> None:
+        if use_send:
+            await interaction.response.send_message(
+                embed=self._build_config_home_embed(),
+                view=ConfigFeatureSelectView(self),
+                ephemeral=True,
+            )
+            return
+        await interaction.response.edit_message(
+            embed=self._build_config_home_embed(),
+            view=ConfigFeatureSelectView(self),
+            content=None,
+        )
+
+    async def _show_general_menu(self, interaction: discord.Interaction) -> None:
+        await interaction.response.edit_message(
+            embed=self._build_general_embed(),
+            view=GeneralConfigView(self),
+            content=None,
+        )
+
+    async def _show_content_review_menu(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            return
+        config = repo.get_config(self.firestore, interaction.guild.id)
+        if not config or not config.enabled:
+            await interaction.response.edit_message(
+                content="Content Review is not enabled. Use `/enable-feature` first.",
+                embed=None,
+                view=None,
+            )
+            return
+        await interaction.response.edit_message(
+            embed=self._build_content_review_embed(),
+            view=ContentReviewConfigView(self),
+            content=None,
+        )
+
+    async def _show_albion_menu(self, interaction: discord.Interaction) -> None:
+        await interaction.response.edit_message(
+            embed=self._build_albion_embed(),
+            view=AlbionConfigView(self),
+            content=None,
+        )
 
     async def _enable_content_review(
         self,
         interaction: discord.Interaction,
         ticket_category_partial: discord.abc.GuildChannel,
         reviewer_role: discord.Role | None,
+        *,
+        use_send: bool = False,
     ) -> None:
         """Enable content review with the selected options."""
         if not interaction.guild:
             return
 
         if not isinstance(interaction.channel, discord.TextChannel):
-            await interaction.response.edit_message(
-                content="Please run this command in a text channel.",
-                embed=None,
-                view=None,
+            await self._respond(
+                interaction,
+                "Please run this command in a text channel.",
+                use_send=use_send,
             )
             return
 
         # Resolve the partial channel to actual category
         ticket_category = interaction.guild.get_channel(ticket_category_partial.id)
         if not ticket_category or not isinstance(ticket_category, discord.CategoryChannel):
-            await interaction.response.edit_message(
-                content="❌ Could not find that category.",
-                embed=None,
-                view=None,
+            await self._respond(
+                interaction,
+                "❌ Could not find that category.",
+                use_send=use_send,
             )
             return
 
         # Check bot permissions in the category
         bot_permissions = ticket_category.permissions_for(interaction.guild.me)
         if not bot_permissions.manage_channels:
-            await interaction.response.edit_message(
-                content=f"❌ I need **Manage Channels** permission in {ticket_category.mention}.",
-                embed=None,
-                view=None,
+            await self._respond(
+                interaction,
+                f"❌ I need **Manage Channels** permission in {ticket_category.mention}.",
+                use_send=use_send,
             )
             return
 
-        await interaction.response.edit_message(
-            content="Setting up content review...", embed=None, view=None
-        )
+        if not use_send:
+            await interaction.response.edit_message(
+                content="Setting up content review...", embed=None, view=None
+            )
 
         # Get or create config with defaults
         config = repo.get_or_create_config(self.firestore, interaction.guild.id)
@@ -1032,15 +550,18 @@ class ContentReviewCog(commands.Cog):
         repo.save_config(self.firestore, config)
 
         reviewer_msg = f"\n• Reviewer role: {reviewer_role.mention}" if reviewer_role else ""
-        await interaction.edit_original_response(
-            content=(
-                f"✅ **Content Review enabled!**\n\n"
-                f"• Submit button posted in this channel\n"
-                f"• Tickets will be created in {ticket_category.mention}"
-                f"{reviewer_msg}\n\n"
-                f"Use `/config` to customize settings."
-            ),
+        success_message = (
+            f"✅ **Content Review enabled!**\n\n"
+            f"• Submit button posted in this channel\n"
+            f"• Tickets will be created in {ticket_category.mention}"
+            f"{reviewer_msg}\n\n"
+            f"Use `/config` to customize settings."
         )
+
+        if use_send:
+            await interaction.response.send_message(success_message, ephemeral=True)
+        else:
+            await interaction.edit_original_response(content=success_message)
 
         LOGGER.info(
             "Content review enabled: guild=%s channel=%s category=%s",
@@ -1109,7 +630,7 @@ class ContentReviewCog(commands.Cog):
         sticky = f"**Title:** {config.sticky_title}\n**Button:** {config.sticky_button_emoji} {config.sticky_button_label}"
         embed.add_field(name="Sticky Message", value=sticky, inline=False)
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message(embed=embed, view=BackToContentReviewView(self))
 
     async def _disable_content_review(self, interaction: discord.Interaction) -> None:
         """Disable content review (from config menu)."""
@@ -1164,57 +685,17 @@ class ContentReviewCog(commands.Cog):
         )
         LOGGER.info("Content review disabled: guild=%s", interaction.guild.id)
 
-    @staticmethod
     async def _try_delete_sticky(
-        guild: discord.Guild, config: ContentReviewConfig
+        self, guild: discord.Guild, config: ContentReviewConfig
     ) -> None:
         """Attempt to delete the sticky submit-button message, ignoring errors."""
-        if not config.submission_channel_id or not config.sticky_message_id:
-            return
-        try:
-            channel = guild.get_channel(config.submission_channel_id)
-            if channel and isinstance(channel, discord.TextChannel):
-                msg = await channel.fetch_message(config.sticky_message_id)
-                await msg.delete()
-        except (discord.NotFound, discord.Forbidden):
-            pass
+        await try_delete_sticky(guild, config)
 
     async def _post_sticky_message(
         self, channel: discord.TextChannel, config: ContentReviewConfig
     ) -> discord.Message:
         """Post the sticky submit message and return it."""
-        sticky_embed = self._build_sticky_embed(config)
-        submit_button_view = SubmitButtonView(
-            label=config.sticky_button_label,
-            emoji=config.sticky_button_emoji,
-        )
-        return await channel.send(embed=sticky_embed, view=submit_button_view)
-
-    async def _try_update_sticky(
-        self, guild: discord.Guild, config: ContentReviewConfig
-    ) -> bool:
-        """Attempt to edit the live sticky message with current config.
-
-        Returns True if the message was successfully updated.
-        """
-        if not config.submission_channel_id or not config.sticky_message_id:
-            return False
-        try:
-            channel = guild.get_channel(config.submission_channel_id)
-            if not channel or not isinstance(channel, discord.TextChannel):
-                return False
-
-            msg = await channel.fetch_message(config.sticky_message_id)
-
-            sticky_embed = self._build_sticky_embed(config)
-            submit_button_view = SubmitButtonView(
-                label=config.sticky_button_label,
-                emoji=config.sticky_button_emoji,
-            )
-            await msg.edit(embed=sticky_embed, view=submit_button_view)
-            return True
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-            return False
+        return await post_sticky_message(channel, config)
 
     async def _sync_sticky_message(
         self, guild: discord.Guild, config: ContentReviewConfig
@@ -1223,23 +704,7 @@ class ContentReviewCog(commands.Cog):
 
         Returns one of: "updated", "reposted", "failed".
         """
-        if await self._try_update_sticky(guild, config):
-            return "updated"
-
-        if not config.submission_channel_id:
-            return "failed"
-
-        channel = guild.get_channel(config.submission_channel_id)
-        if not channel or not isinstance(channel, discord.TextChannel):
-            return "failed"
-
-        try:
-            sticky_msg = await self._post_sticky_message(channel, config)
-            config.sticky_message_id = sticky_msg.id
-            repo.save_config(self.firestore, config)
-            return "reposted"
-        except (discord.Forbidden, discord.HTTPException):
-            return "failed"
+        return await sync_sticky_message(self.firestore, guild, config)
 
     async def _disable_content_review_direct(self, interaction: discord.Interaction) -> None:
         """Disable content review (direct command flow)."""
@@ -1389,10 +854,14 @@ class ContentReviewCog(commands.Cog):
                 color=discord.Color.blue(),
             )
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message(embed=embed, view=BackToGeneralView(self))
 
     async def _add_bot_admin_role(
-        self, interaction: discord.Interaction, role: discord.Role
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+        *,
+        use_send: bool = False,
     ) -> None:
         """Add a bot admin role."""
         if not interaction.guild:
@@ -1403,20 +872,20 @@ class ContentReviewCog(commands.Cog):
         )
 
         if role.id in features.bot_admin_role_ids:
-            await interaction.response.edit_message(
-                content=f"{role.mention} is already a bot admin role.",
-                embed=None,
-                view=None,
+            await self._respond(
+                interaction,
+                f"{role.mention} is already a bot admin role.",
+                use_send=use_send,
             )
             return
 
         features.bot_admin_role_ids.append(role.id)
         albion_repo.save_guild_features(self.firestore, features)
 
-        await interaction.response.edit_message(
-            content=f"✅ Added {role.mention} as a bot admin role.",
-            embed=None,
-            view=None,
+        await self._respond(
+            interaction,
+            f"✅ Added {role.mention} as a bot admin role.",
+            use_send=use_send,
         )
         LOGGER.info("Added bot admin role %s: guild=%s", role.id, interaction.guild.id)
 
@@ -1436,11 +905,17 @@ class ContentReviewCog(commands.Cog):
 
         view = RemoveBotAdminRoleView(self, features.bot_admin_role_ids)
         await interaction.response.edit_message(
-            content="Select a role to remove:", embed=None, view=view
+            content="Select a role to remove from bot admin roles:",
+            embed=None,
+            view=view,
         )
 
     async def _remove_bot_admin_role(
-        self, interaction: discord.Interaction, role: discord.Role
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+        *,
+        use_send: bool = False,
     ) -> None:
         """Remove a bot admin role."""
         if not interaction.guild:
@@ -1448,20 +923,20 @@ class ContentReviewCog(commands.Cog):
 
         features = albion_repo.get_guild_features(self.firestore, interaction.guild.id)
         if not features or role.id not in features.bot_admin_role_ids:
-            await interaction.response.edit_message(
-                content=f"{role.mention} is not a bot admin role.",
-                embed=None,
-                view=None,
+            await self._respond(
+                interaction,
+                f"{role.mention} is not a bot admin role.",
+                use_send=use_send,
             )
             return
 
         features.bot_admin_role_ids.remove(role.id)
         albion_repo.save_guild_features(self.firestore, features)
 
-        await interaction.response.edit_message(
-            content=f"✅ Removed {role.mention} from bot admin roles.",
-            embed=None,
-            view=None,
+        await self._respond(
+            interaction,
+            f"✅ Removed {role.mention} from bot admin roles.",
+            use_send=use_send,
         )
         LOGGER.info("Removed bot admin role %s: guild=%s", role.id, interaction.guild.id)
 
@@ -1483,7 +958,7 @@ class ContentReviewCog(commands.Cog):
         await interaction.response.edit_message(
             content="✅ Cleared all bot admin roles. Only Discord admins can manage the bot now.",
             embed=None,
-            view=None,
+            view=BackToGeneralView(self),
         )
         LOGGER.info("Cleared bot admin roles: guild=%s", interaction.guild.id)
 
@@ -1506,7 +981,7 @@ class ContentReviewCog(commands.Cog):
         embed.add_field(name="💰 Price Lookup", value=prices_status, inline=True)
         embed.add_field(name="⚔️ Builds", value=builds_status, inline=True)
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message(embed=embed, view=BackToAlbionView(self))
 
     async def _enable_albion_feature(
         self,
@@ -1610,11 +1085,17 @@ class ContentReviewCog(commands.Cog):
 
         view = RemoveRoleView(self, config.reviewer_role_ids)
         await interaction.response.edit_message(
-            content="Select a role to remove:", embed=None, view=view
+            content="Select a role to remove from reviewer roles:",
+            embed=None,
+            view=view,
         )
 
     async def _add_reviewer_role(
-        self, interaction: discord.Interaction, role: discord.Role
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+        *,
+        use_send: bool = False,
     ) -> None:
         """Add a reviewer role."""
         if not interaction.guild:
@@ -1622,23 +1103,34 @@ class ContentReviewCog(commands.Cog):
 
         config = repo.get_or_create_config(self.firestore, interaction.guild.id)
         if role.id in config.reviewer_role_ids:
-            await interaction.response.edit_message(
-                content=f"{role.mention} is already a reviewer role.",
-                embed=None,
-                view=None,
+            await self._respond(
+                interaction,
+                f"{role.mention} is already a reviewer role.",
+                use_send=use_send,
             )
             return
 
         config.reviewer_role_ids.append(role.id)
         repo.save_config(self.firestore, config)
-        await interaction.response.edit_message(
-            content=f"✅ Added {role.mention} as a reviewer role.",
-            embed=None,
-            view=None,
-        )
+        if use_send:
+            await self._respond(
+                interaction,
+                f"✅ Added {role.mention} as a reviewer role.",
+                use_send=True,
+            )
+        else:
+            await interaction.response.edit_message(
+                content=f"✅ Added {role.mention} as a reviewer role.",
+                embed=None,
+                view=BackToContentReviewView(self),
+            )
 
     async def _remove_reviewer_role(
-        self, interaction: discord.Interaction, role: discord.Role
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+        *,
+        use_send: bool = False,
     ) -> None:
         """Remove a reviewer role."""
         if not interaction.guild:
@@ -1646,20 +1138,27 @@ class ContentReviewCog(commands.Cog):
 
         config = repo.get_config(self.firestore, interaction.guild.id)
         if not config or role.id not in config.reviewer_role_ids:
-            await interaction.response.edit_message(
-                content=f"{role.mention} is not a reviewer role.",
-                embed=None,
-                view=None,
+            await self._respond(
+                interaction,
+                f"{role.mention} is not a reviewer role.",
+                use_send=use_send,
             )
             return
 
         config.reviewer_role_ids.remove(role.id)
         repo.save_config(self.firestore, config)
-        await interaction.response.edit_message(
-            content=f"✅ Removed {role.mention} from reviewer roles.",
-            embed=None,
-            view=None,
-        )
+        if use_send:
+            await self._respond(
+                interaction,
+                f"✅ Removed {role.mention} from reviewer roles.",
+                use_send=True,
+            )
+        else:
+            await interaction.response.edit_message(
+                content=f"✅ Removed {role.mention} from reviewer roles.",
+                embed=None,
+                view=BackToContentReviewView(self),
+            )
 
     async def _show_remove_field_view(self, interaction: discord.Interaction) -> None:
         """Show the view to remove a submission field."""
@@ -1674,8 +1173,11 @@ class ContentReviewCog(commands.Cog):
             return
 
         view = RemoveFieldView(self, config.submission_fields)
+        field_ids = ", ".join(f.id for f in config.submission_fields)
         await interaction.response.edit_message(
-            content="Select a field to remove:", embed=None, view=view
+            content=f"Enter the field ID to remove. Available IDs: {field_ids}",
+            embed=None,
+            view=view,
         )
 
     async def _add_field(
@@ -1721,7 +1223,11 @@ class ContentReviewCog(commands.Cog):
         )
 
     async def _remove_field(
-        self, interaction: discord.Interaction, field_id: str
+        self,
+        interaction: discord.Interaction,
+        field_id: str,
+        *,
+        use_send: bool = False,
     ) -> None:
         """Remove a submission field."""
         if not interaction.guild:
@@ -1729,24 +1235,33 @@ class ContentReviewCog(commands.Cog):
 
         config = repo.get_config(self.firestore, interaction.guild.id)
         if not config:
-            await interaction.response.edit_message(
-                content=_MSG_NOT_CONFIGURED, embed=None, view=None
-            )
+            await self._respond(interaction, _MSG_NOT_CONFIGURED, use_send=use_send)
             return
 
         original_count = len(config.submission_fields)
         config.submission_fields = [f for f in config.submission_fields if f.id != field_id]
 
         if len(config.submission_fields) == original_count:
-            await interaction.response.edit_message(
-                content=f"No field with ID `{field_id}` found.", embed=None, view=None
+            await self._respond(
+                interaction,
+                f"No field with ID `{field_id}` found.",
+                use_send=use_send,
             )
             return
 
         repo.save_config(self.firestore, config)
-        await interaction.response.edit_message(
-            content=f"✅ Removed field `{field_id}`.", embed=None, view=None
-        )
+        if use_send:
+            await self._respond(
+                interaction,
+                f"✅ Removed field `{field_id}`.",
+                use_send=True,
+            )
+        else:
+            await interaction.response.edit_message(
+                content=f"✅ Removed field `{field_id}`.",
+                embed=None,
+                view=BackToContentReviewView(self),
+            )
 
     async def _show_remove_category_view(self, interaction: discord.Interaction) -> None:
         """Show the view to remove a review category."""
@@ -1761,8 +1276,11 @@ class ContentReviewCog(commands.Cog):
             return
 
         view = RemoveCategoryView(self, config.review_categories)
+        category_ids = ", ".join(c.id for c in config.review_categories)
         await interaction.response.edit_message(
-            content="Select a category to remove:", embed=None, view=view
+            content=f"Enter the category ID to remove. Available IDs: {category_ids}",
+            embed=None,
+            view=view,
         )
 
     async def _add_category(
@@ -1802,7 +1320,11 @@ class ContentReviewCog(commands.Cog):
         )
 
     async def _remove_category(
-        self, interaction: discord.Interaction, category_id: str
+        self,
+        interaction: discord.Interaction,
+        category_id: str,
+        *,
+        use_send: bool = False,
     ) -> None:
         """Remove a review category."""
         if not interaction.guild:
@@ -1810,26 +1332,33 @@ class ContentReviewCog(commands.Cog):
 
         config = repo.get_config(self.firestore, interaction.guild.id)
         if not config:
-            await interaction.response.edit_message(
-                content=_MSG_NOT_CONFIGURED, embed=None, view=None
-            )
+            await self._respond(interaction, _MSG_NOT_CONFIGURED, use_send=use_send)
             return
 
         original_count = len(config.review_categories)
         config.review_categories = [c for c in config.review_categories if c.id != category_id]
 
         if len(config.review_categories) == original_count:
-            await interaction.response.edit_message(
-                content=f"No category with ID `{category_id}` found.",
-                embed=None,
-                view=None,
+            await self._respond(
+                interaction,
+                f"No category with ID `{category_id}` found.",
+                use_send=use_send,
             )
             return
 
         repo.save_config(self.firestore, config)
-        await interaction.response.edit_message(
-            content=f"✅ Removed category `{category_id}`.", embed=None, view=None
-        )
+        if use_send:
+            await self._respond(
+                interaction,
+                f"✅ Removed category `{category_id}`.",
+                use_send=True,
+            )
+        else:
+            await interaction.response.edit_message(
+                content=f"✅ Removed category `{category_id}`.",
+                embed=None,
+                view=BackToContentReviewView(self),
+            )
 
     async def _set_sticky(
         self,
@@ -1869,7 +1398,7 @@ class ContentReviewCog(commands.Cog):
 
         sync_result = await self._sync_sticky_message(interaction.guild, config)
         if sync_result == "updated":
-            sync_note = ""
+            sync_note = "\n\n✅ Live sticky message updated in place."
         elif sync_result == "reposted":
             sync_note = "\n\n✅ Sticky message was missing, so a new one was posted automatically."
         else:
@@ -1893,7 +1422,9 @@ class ContentReviewCog(commands.Cog):
 
         status = "enabled" if config.dm_on_complete else "disabled"
         await interaction.response.edit_message(
-            content=f"✅ DM on complete: **{status}**", embed=None, view=None
+            content=f"✅ DM on complete: **{status}**",
+            embed=None,
+            view=SettingsView(self),
         )
 
     async def _toggle_leaderboard(self, interaction: discord.Interaction) -> None:
@@ -1907,7 +1438,9 @@ class ContentReviewCog(commands.Cog):
 
         status = "enabled" if config.leaderboard_enabled else "disabled"
         await interaction.response.edit_message(
-            content=f"✅ Leaderboard: **{status}**", embed=None, view=None
+            content=f"✅ Leaderboard: **{status}**",
+            embed=None,
+            view=SettingsView(self),
         )
 
     async def _set_timeout(self, interaction: discord.Interaction, minutes: int) -> None:
@@ -2183,22 +1716,19 @@ class ContentReviewCog(commands.Cog):
         self, interaction: discord.Interaction, submission: Submission
     ) -> None:
         """Close a ticket channel (called after confirmation)."""
-        if not interaction.guild or not isinstance(
-            interaction.channel, discord.TextChannel
-        ):
+        if not interaction.guild or not isinstance(interaction.channel, discord.TextChannel):
             return
 
-        # Update submission status
         submission.status = "closed"
         repo.update_submission(self.firestore, submission)
 
-        # Send closing message
         close_embed = discord.Embed(
             title="🔒 Ticket Closed",
             description="This ticket has been closed. The channel will be deleted shortly.",
             color=discord.Color.orange(),
         )
         await interaction.channel.send(embed=close_embed)
+
 
         # Delete channel after a short delay (allow reading the close message)
         await asyncio.sleep(5)
