@@ -21,3 +21,10 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[project.optional-dependencies]
+dev = [
+  "watchfiles>=1.0.0",
+  "ruff",
+  "mypy",
+]
+

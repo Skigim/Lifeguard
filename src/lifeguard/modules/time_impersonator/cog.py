@@ -335,7 +335,7 @@ class TimeImpersonatorCog(commands.Cog):
         user_tz_record = repo.get_user_timezone(self.firestore, interaction.user.id)
         if not user_tz_record:
             await interaction.response.send_message(
-                "Please set your timezone first using `/tz`.", ephemeral=True
+                "Please set your timezone first using `/tz set`.", ephemeral=True
             )
             return
 

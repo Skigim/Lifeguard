@@ -747,6 +747,30 @@ class TimeoutModal(discord.ui.Modal, title="Set Review Timeout"):
         await self.cog._set_timeout(interaction, minutes)
 
 
+class _CloseTicketConfirmView(discord.ui.View):
+    """Confirmation dialog before closing/deleting a ticket channel."""
+
+    def __init__(self, cog: "ContentReviewCog", submission: Submission) -> None:
+        super().__init__(timeout=30)
+        self.cog = cog
+        self.submission = submission
+
+    @discord.ui.button(label="Close & Delete", style=discord.ButtonStyle.danger, emoji="🔒")
+    async def confirm(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await interaction.response.edit_message(content="Closing ticket…", view=None)
+        await self.cog._close_ticket(interaction, self.submission)
+        self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await interaction.response.edit_message(content="Cancelled.", view=None)
+        self.stop()
+
+
 class ContentReviewCog(commands.Cog):
     """Content review and feedback system."""
 
@@ -774,6 +798,29 @@ class ContentReviewCog(commands.Cog):
             await interaction.response.send_message(content, ephemeral=True)
         else:
             await interaction.response.edit_message(content=content, embed=None, view=None)
+
+    @staticmethod
+    def _build_sticky_embed(config: ContentReviewConfig) -> discord.Embed:
+        """Build the sticky submit-button embed from config."""
+        embed = discord.Embed(
+            title=config.sticky_title,
+            description=config.sticky_description,
+            color=discord.Color.blue(),
+        )
+        embed.add_field(
+            name="\U0001f4cb How it works",
+            value=(
+                f"1. Click **{config.sticky_button_label}** below\n"
+                "2. Fill out the form with your content details\n"
+                "3. A private ticket will be created for your review\n"
+                "4. Reviewers will provide feedback in your ticket"
+            ),
+            inline=False,
+        )
+        embed.set_footer(
+            text="\u26a0\ufe0f By submitting, you agree to receive constructive feedback on your content."
+        )
+        return embed
 
     def _user_can_manage_bot(self, interaction: discord.Interaction) -> bool:
         """Check if user has permission to manage bot settings.
@@ -978,25 +1025,7 @@ class ContentReviewCog(commands.Cog):
         repo.save_config(self.firestore, config)
 
         # Send sticky message with submit button
-        sticky_embed = discord.Embed(
-            title=config.sticky_title,
-            description=config.sticky_description,
-            color=discord.Color.blue(),
-        )
-        sticky_embed.add_field(
-            name="📋 How it works",
-            value=(
-                f"1. Click **{config.sticky_button_label}** below\n"
-                "2. Fill out the form with your content details\n"
-                "3. A private ticket will be created for your review\n"
-                "4. Reviewers will provide feedback in your ticket"
-            ),
-            inline=False,
-        )
-        sticky_embed.set_footer(
-            text="⚠️ By submitting, you agree to receive constructive feedback on your content."
-        )
-
+        sticky_embed = self._build_sticky_embed(config)
         submit_button_view = SubmitButtonView(
             label=config.sticky_button_label,
             emoji=config.sticky_button_emoji,
@@ -1154,6 +1183,32 @@ class ContentReviewCog(commands.Cog):
                 await msg.delete()
         except (discord.NotFound, discord.Forbidden):
             pass
+
+    async def _try_update_sticky(
+        self, guild: discord.Guild, config: ContentReviewConfig
+    ) -> bool:
+        """Attempt to edit the live sticky message with current config.
+
+        Returns True if the message was successfully updated.
+        """
+        if not config.submission_channel_id or not config.sticky_message_id:
+            return False
+        try:
+            channel = guild.get_channel(config.submission_channel_id)
+            if not channel or not isinstance(channel, discord.TextChannel):
+                return False
+
+            msg = await channel.fetch_message(config.sticky_message_id)
+
+            sticky_embed = self._build_sticky_embed(config)
+            submit_button_view = SubmitButtonView(
+                label=config.sticky_button_label,
+                emoji=config.sticky_button_emoji,
+            )
+            await msg.edit(embed=sticky_embed, view=submit_button_view)
+            return True
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            return False
 
     async def _disable_content_review_direct(self, interaction: discord.Interaction) -> None:
         """Disable content review (direct command flow)."""
@@ -1780,8 +1835,19 @@ class ContentReviewCog(commands.Cog):
             return
 
         repo.save_config(self.firestore, config)
+
+        # Try to live-update the existing sticky message
+        updated_live = await self._try_update_sticky(interaction.guild, config)
+        repost_hint = (
+            ""
+            if updated_live
+            else "\n\n💡 Use **Re-post Submit Button** in `/config` to update the live message."
+        )
+
         await interaction.response.send_message(
-            "✅ Updated sticky message:\n" + "\n".join(f"• {c}" for c in changes),
+            "✅ Updated sticky message:\n"
+            + "\n".join(f"• {c}" for c in changes)
+            + repost_hint,
             ephemeral=True,
         )
 
@@ -1848,25 +1914,7 @@ class ContentReviewCog(commands.Cog):
         config.submission_channel_id = interaction.channel.id
         repo.save_config(self.firestore, config)
 
-        sticky_embed = discord.Embed(
-            title=config.sticky_title,
-            description=config.sticky_description,
-            color=discord.Color.blue(),
-        )
-        sticky_embed.add_field(
-            name="📋 How it works",
-            value=(
-                f"1. Click **{config.sticky_button_label}** below\n"
-                "2. Fill out the form with your content details\n"
-                "3. A private ticket will be created for your review\n"
-                "4. Reviewers will provide feedback in your ticket"
-            ),
-            inline=False,
-        )
-        sticky_embed.set_footer(
-            text="⚠️ By submitting, you agree to receive constructive feedback on your content."
-        )
-
+        sticky_embed = self._build_sticky_embed(config)
         submit_button_view = SubmitButtonView(
             label=config.sticky_button_label,
             emoji=config.sticky_button_emoji,
@@ -1933,8 +1981,9 @@ class ContentReviewCog(commands.Cog):
         # Defer while we create the ticket
         await interaction.response.defer(ephemeral=True)
 
-        # Generate a ticket name
-        ticket_name = f"review-{interaction.user.name[:20]}-{len(field_values)}"
+        # Generate a unique ticket name using a short timestamp suffix
+        short_id = f"{int(datetime.now(timezone.utc).timestamp()) % 100_000:05d}"
+        ticket_name = f"review-{interaction.user.name[:20]}-{short_id}"
 
         # Build permission overwrites for the ticket channel
         overwrites: dict[discord.Role | discord.Member, discord.PermissionOverwrite] = {
@@ -2048,6 +2097,17 @@ class ContentReviewCog(commands.Cog):
             view=close_view,
         )
 
+    @staticmethod
+    def _can_close_ticket(
+        user: discord.Member, submission: Submission
+    ) -> bool:
+        """Check whether *user* is allowed to close *submission*'s ticket."""
+        return (
+            user.id == submission.submitter_id
+            or user.id == submission.reviewer_id
+            or user.guild_permissions.administrator
+        )
+
     @app_commands.command(name="close-ticket", description="Close this review ticket")
     @require_content_review()
     async def close_ticket_command(self, interaction: discord.Interaction) -> None:
@@ -2069,30 +2129,35 @@ class ContentReviewCog(commands.Cog):
             )
             return
 
-        # Check if user can close (submitter, reviewer, or admin)
-        is_submitter = interaction.user.id == submission.submitter_id
-        is_reviewer = submission.reviewer_id == interaction.user.id
-        is_admin = interaction.user.guild_permissions.administrator  # type: ignore
-
-        if not (is_submitter or is_reviewer or is_admin):
+        if not self._can_close_ticket(interaction.user, submission):  # type: ignore[arg-type]
             await interaction.response.send_message(
                 "Only the submitter, reviewer, or an admin can close this ticket.",
                 ephemeral=True,
             )
             return
 
-        await self._close_ticket(interaction, submission)
+        await self._confirm_and_close_ticket(interaction, submission)
+
+    async def _confirm_and_close_ticket(
+        self, interaction: discord.Interaction, submission: Submission
+    ) -> None:
+        """Show a confirmation prompt before closing the ticket."""
+        view = _CloseTicketConfirmView(self, submission)
+        await interaction.response.send_message(
+            "⚠️ **This will permanently close and delete this ticket channel.**\n"
+            "Are you sure?",
+            view=view,
+            ephemeral=True,
+        )
 
     async def _close_ticket(
         self, interaction: discord.Interaction, submission: Submission
     ) -> None:
-        """Close a ticket channel."""
+        """Close a ticket channel (called after confirmation)."""
         if not interaction.guild or not isinstance(
             interaction.channel, discord.TextChannel
         ):
             return
-
-        await interaction.response.defer(ephemeral=True)
 
         # Update submission status
         submission.status = "closed"
@@ -2105,8 +2170,6 @@ class ContentReviewCog(commands.Cog):
             color=discord.Color.orange(),
         )
         await interaction.channel.send(embed=close_embed)
-
-        await interaction.followup.send("Ticket closed successfully!", ephemeral=True)
 
         # Delete channel after a short delay (allow reading the close message)
         await asyncio.sleep(5)
@@ -2206,19 +2269,14 @@ class ContentReviewCog(commands.Cog):
             )
             return
 
-        # Check if user can close
-        is_submitter = interaction.user.id == submission.submitter_id
-        is_reviewer = submission.reviewer_id == interaction.user.id
-        is_admin = interaction.user.guild_permissions.administrator  # type: ignore
-
-        if not (is_submitter or is_reviewer or is_admin):
+        if not self._can_close_ticket(interaction.user, submission):  # type: ignore[arg-type]
             await interaction.response.send_message(
                 "Only the submitter, reviewer, or an admin can close this ticket.",
                 ephemeral=True,
             )
             return
 
-        await self._close_ticket(interaction, submission)
+        await self._confirm_and_close_ticket(interaction, submission)
 
     async def _handle_submit_button(self, interaction: discord.Interaction) -> None:
         """Handle the submit button from sticky message."""

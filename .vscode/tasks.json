@@ -23,6 +23,21 @@
         }
       },
       "problemMatcher": []
+    },
+    {
+      "label": "Dev (hot-reload)",
+      "type": "shell",
+      "command": "${command:python.interpreterPath}",
+      "args": ["scripts/dev.py"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
     }
   ]
 }
