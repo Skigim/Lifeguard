@@ -73,7 +73,9 @@ class SubmitButtonView(discord.ui.View):
         self.add_item(button)
 
     async def _button_callback(self, interaction: discord.Interaction) -> None:
-        pass
+        if interaction.response.is_done():
+            return
+        await interaction.response.defer()
 
 
 def build_sticky_embed(config: ContentReviewConfig) -> discord.Embed:
@@ -180,6 +182,12 @@ async def sync_sticky_message(
     channel = await resolve_submission_text_channel(guild, config)
     if not channel:
         return "failed"
+
+    if config.sticky_message_id:
+        try:
+            await try_delete_sticky(guild, config)
+        except (discord.HTTPException, discord.Forbidden, discord.NotFound):
+            pass
 
     try:
         sticky_msg = await post_sticky_message(channel, config)

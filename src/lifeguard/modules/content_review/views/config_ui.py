@@ -561,6 +561,9 @@ class AddCategoryModal(discord.ui.Modal, title="Add Review Category"):
         except (ValueError, IndexError):
             min_score, max_score = 1, 5
 
+        if min_score > max_score:
+            min_score, max_score = max_score, min_score
+
         await self.cog._add_category(
             interaction,
             category_id=self.category_id.value.strip(),
@@ -710,6 +713,8 @@ class TimeoutModal(discord.ui.Modal, title="Set Review Timeout"):
         try:
             minutes = int(self.timeout_minutes.value.strip())
         except ValueError:
+            minutes = 15
+        if minutes < 1 or minutes > 1440:
             minutes = 15
         await self.cog._set_timeout(interaction, minutes)
 

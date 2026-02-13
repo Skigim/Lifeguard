@@ -261,10 +261,7 @@ class ContentReviewCog(commands.Cog):
         digits = "".join(ch for ch in value if ch.isdigit())
         if not digits:
             return None
-        try:
-            return int(digits)
-        except ValueError:
-            return None
+        return int(digits)
 
     def _resolve_role_from_input(
         self, guild: discord.Guild, value: str
