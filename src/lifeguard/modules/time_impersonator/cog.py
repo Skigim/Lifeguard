@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 
+_MSG_DB_UNAVAILABLE = "Database not available."
+
 # Cache available timezones for autocomplete
 _TIMEZONES: list[str] = sorted(available_timezones())
 
@@ -44,7 +46,7 @@ _COMMON_TIMEZONES = [
 WEBHOOK_NAME = "LifeguardImpersonator"
 
 
-async def timezone_autocomplete(
+async def timezone_autocomplete(  # NOSONAR - discord.py requires async
     interaction: discord.Interaction,
     current: str,
 ) -> list[app_commands.Choice[str]]:
@@ -207,7 +209,7 @@ async def _get_or_create_webhook(
 # --- Feature Check ---
 
 
-async def _check_time_impersonator_enabled(interaction: discord.Interaction) -> bool:
+async def _check_time_impersonator_enabled(interaction: discord.Interaction) -> bool:  # NOSONAR
     """Check that time impersonator is enabled for this guild."""
     if not interaction.guild:
         return False
@@ -256,7 +258,7 @@ class TimeImpersonatorCog(commands.Cog):
         """Set the user's preferred timezone."""
         if not self.firestore:
             await interaction.response.send_message(
-                "Database not available.", ephemeral=True
+                _MSG_DB_UNAVAILABLE, ephemeral=True
             )
             return
 
@@ -285,7 +287,7 @@ class TimeImpersonatorCog(commands.Cog):
         """Clear the user's saved timezone."""
         if not self.firestore:
             await interaction.response.send_message(
-                "Database not available.", ephemeral=True
+                _MSG_DB_UNAVAILABLE, ephemeral=True
             )
             return
 
@@ -308,7 +310,7 @@ class TimeImpersonatorCog(commands.Cog):
         """Send a message with natural language times converted to Discord timestamps."""
         if not self.firestore:
             await interaction.response.send_message(
-                "Database not available.", ephemeral=True
+                _MSG_DB_UNAVAILABLE, ephemeral=True
             )
             return
 

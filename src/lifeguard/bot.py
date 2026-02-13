@@ -1,14 +1,36 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import discord
 from discord.ext import commands
 
 from lifeguard.config import Config
 
+if TYPE_CHECKING:
+    import aiohttp
 
 LOGGER = logging.getLogger(__name__)
+
+
+async def _sync_commands(bot: commands.Bot, config: Config) -> None:
+    """Sync app commands to the target guild or globally."""
+    target_guild_id = config.active_guild_id
+
+    if target_guild_id is not None:
+        guild = discord.Object(id=target_guild_id)
+        bot.tree.copy_global_to(guild=guild)
+        synced = await bot.tree.sync(guild=guild)
+        LOGGER.info("Synced %d app commands to guild %s", len(synced), target_guild_id)
+
+        # Clear global commands to prevent duplicates
+        bot.tree.clear_commands(guild=None)
+        await bot.tree.sync()
+        LOGGER.info("Cleared global commands")
+    else:
+        synced = await bot.tree.sync()
+        LOGGER.info("Synced %d global app commands", len(synced))
 
 
 def create_bot(config: Config) -> commands.Bot:
@@ -28,31 +50,11 @@ def create_bot(config: Config) -> commands.Bot:
             bot.user.id if bot.user else "?",
         )
 
-        # Only sync commands once, not on every reconnect
         if bot._commands_synced:  # type: ignore[attr-defined]
             return
 
-        target_guild_id = config.active_guild_id
         try:
-            if target_guild_id is not None:
-                guild = discord.Object(id=target_guild_id)
-
-                # Sync to guild
-                bot.tree.copy_global_to(guild=guild)
-                synced = await bot.tree.sync(guild=guild)
-                LOGGER.info(
-                    "Synced %d app commands to guild %s",
-                    len(synced),
-                    target_guild_id,
-                )
-
-                # Clear global commands to prevent duplicates (sync empty global)
-                bot.tree.clear_commands(guild=None)
-                await bot.tree.sync()
-                LOGGER.info("Cleared global commands")
-            else:
-                synced = await bot.tree.sync()
-                LOGGER.info("Synced %d global app commands", len(synced))
+            await _sync_commands(bot, config)
             bot._commands_synced = True  # type: ignore[attr-defined]
         except Exception:
             LOGGER.exception("Failed to sync app commands")
@@ -99,7 +101,7 @@ def _load_core_cog(bot: commands.Bot) -> commands.Cog:
 def _load_albion_cog(
     bot: commands.Bot,
     config: Config,
-    session: "aiohttp.ClientSession",
+    session: aiohttp.ClientSession,
 ) -> commands.Cog:
     from lifeguard.modules.albion.cog import AlbionCog
 

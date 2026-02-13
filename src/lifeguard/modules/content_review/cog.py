@@ -37,6 +37,17 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 
+# --- Common Response Strings ---
+_MSG_SERVER_ONLY = "Server only."
+_MSG_NO_PERMISSION = "You don't have permission to manage bot settings."
+_MSG_GUILD_ONLY = "This command can only be used in a server."
+_MSG_NOT_CONFIGURED = "Not configured."
+_STATUS_ENABLED = "✅ Enabled"
+_STATUS_DISABLED = "❌ Disabled"
+_FEATURE_ALBION_PRICES = "Albion Price Lookup"
+_FEATURE_ALBION_BUILDS = "Albion Builds"
+_FEATURE_CONTENT_REVIEW = "Content Review"
+
 
 # --- Feature Registry ---
 # Central list of all features for autocomplete and validation
@@ -58,7 +69,7 @@ def _get_feature_choices() -> list[app_commands.Choice[str]]:
     ]
 
 
-async def feature_autocomplete(
+async def feature_autocomplete(  # NOSONAR - discord.py requires async
     interaction: discord.Interaction,
     current: str,
 ) -> list[app_commands.Choice[str]]:
@@ -89,7 +100,7 @@ def _feature_requires_setup(value: str) -> bool:
 
 def require_content_review():
     """Check that content review is enabled for this guild."""
-    async def predicate(interaction: discord.Interaction) -> bool:
+    async def predicate(interaction: discord.Interaction) -> bool:  # NOSONAR - discord.py requires async
         if not interaction.guild:
             return False
         cog = interaction.client.get_cog("ContentReviewCog")
@@ -97,7 +108,7 @@ def require_content_review():
             return False
         config = repo.get_config(cog.firestore, interaction.guild.id)
         if not config or not config.enabled:
-            raise FeatureDisabledError("Content Review")
+            raise FeatureDisabledError(_FEATURE_CONTENT_REVIEW)
         return True
     return app_commands.check(predicate)
 
@@ -234,7 +245,7 @@ class ConfigFeatureSelect(discord.ui.Select):
                 emoji="⚙️",
             ),
             discord.SelectOption(
-                label="Content Review",
+                label=_FEATURE_CONTENT_REVIEW,
                 value="content_review",
                 description="Configure the content review system",
                 emoji="📝",
@@ -747,6 +758,23 @@ class ContentReviewCog(commands.Cog):
     def firestore(self) -> FirestoreClient:
         return self.bot.lifeguard_firestore  # type: ignore[attr-defined]
 
+    @staticmethod
+    async def _respond(
+        interaction: discord.Interaction,
+        content: str,
+        *,
+        use_send: bool = False,
+    ) -> None:
+        """Send or edit an interaction response based on *use_send*.
+
+        Centralises the send_message / edit_message branching so callers
+        don't need to repeat the pattern.
+        """
+        if use_send:
+            await interaction.response.send_message(content, ephemeral=True)
+        else:
+            await interaction.response.edit_message(content=content, embed=None, view=None)
+
     def _user_can_manage_bot(self, interaction: discord.Interaction) -> bool:
         """Check if user has permission to manage bot settings.
         
@@ -777,22 +805,6 @@ class ContentReviewCog(commands.Cog):
 
     # --- Main Interactive Commands ---
 
-    @app_commands.command(
-        name="enable-feature",
-        description="Enable a bot feature",
-    )
-    async def enable_feature_command(self, interaction: discord.Interaction) -> None:
-        """Show feature selection menu."""
-        if not interaction.guild:
-            await interaction.response.send_message("Server only.", ephemeral=True)
-            return
-
-        if not self._user_can_manage_bot(interaction):
-            await interaction.response.send_message(
-                "You don't have permission to manage bot settings.", ephemeral=True
-            )
-            return
-
     # --- Main Interactive Commands ---
 
     @app_commands.command(
@@ -808,12 +820,12 @@ class ContentReviewCog(commands.Cog):
     ) -> None:
         """Enable a feature for this server."""
         if not interaction.guild:
-            await interaction.response.send_message("Server only.", ephemeral=True)
+            await interaction.response.send_message(_MSG_SERVER_ONLY, ephemeral=True)
             return
 
         if not self._user_can_manage_bot(interaction):
             await interaction.response.send_message(
-                "You don't have permission to manage bot settings.", ephemeral=True
+                _MSG_NO_PERMISSION, ephemeral=True
             )
             return
 
@@ -825,8 +837,7 @@ class ContentReviewCog(commands.Cog):
             return
 
         # Features requiring setup show a wizard view
-        if _feature_requires_setup(feature):
-            if feature == "content_review":
+        if _feature_requires_setup(feature) and feature == "content_review":
                 view = ContentReviewSetupView(self)
                 embed = discord.Embed(
                     title="📝 Content Review Setup",
@@ -860,12 +871,12 @@ class ContentReviewCog(commands.Cog):
     ) -> None:
         """Disable a feature for this server."""
         if not interaction.guild:
-            await interaction.response.send_message("Server only.", ephemeral=True)
+            await interaction.response.send_message(_MSG_SERVER_ONLY, ephemeral=True)
             return
 
         if not self._user_can_manage_bot(interaction):
             await interaction.response.send_message(
-                "You don't have permission to manage bot settings.", ephemeral=True
+                _MSG_NO_PERMISSION, ephemeral=True
             )
             return
 
@@ -892,12 +903,12 @@ class ContentReviewCog(commands.Cog):
     async def config_command(self, interaction: discord.Interaction) -> None:
         """Show configuration menu."""
         if not interaction.guild:
-            await interaction.response.send_message("Server only.", ephemeral=True)
+            await interaction.response.send_message(_MSG_SERVER_ONLY, ephemeral=True)
             return
 
         if not self._user_can_manage_bot(interaction):
             await interaction.response.send_message(
-                "You don't have permission to manage bot settings.", ephemeral=True
+                _MSG_NO_PERMISSION, ephemeral=True
             )
             return
 
@@ -1022,7 +1033,7 @@ class ContentReviewCog(commands.Cog):
         config = repo.get_config(self.firestore, interaction.guild.id)
         if not config:
             await interaction.response.edit_message(
-                content="Not configured.", embed=None, view=None
+                content=_MSG_NOT_CONFIGURED, embed=None, view=None
             )
             return
 
@@ -1031,7 +1042,7 @@ class ContentReviewCog(commands.Cog):
             color=discord.Color.blue(),
         )
 
-        status = "✅ Enabled" if config.enabled else "❌ Disabled"
+        status = _STATUS_ENABLED if config.enabled else _STATUS_DISABLED
         embed.add_field(name="Status", value=status, inline=True)
 
         sub_ch = f"<#{config.submission_channel_id}>" if config.submission_channel_id else "Not set"
@@ -1084,7 +1095,7 @@ class ContentReviewCog(commands.Cog):
         config = repo.get_config(self.firestore, interaction.guild.id)
         if not config:
             await interaction.response.edit_message(
-                content="Not configured.", embed=None, view=None
+                content=_MSG_NOT_CONFIGURED, embed=None, view=None
             )
             return
 
@@ -1111,41 +1122,38 @@ class ContentReviewCog(commands.Cog):
 
         config = repo.get_config(self.firestore, interaction.guild.id)
         if not config or not config.enabled:
-            msg = "Content review is not enabled."
-            if use_send:
-                await interaction.response.send_message(msg, ephemeral=True)
-            else:
-                await interaction.response.edit_message(content=msg, embed=None, view=None)
+            await self._respond(interaction, "Content review is not enabled.", use_send=use_send)
             return
 
-        # Try to delete the sticky message
-        if config.submission_channel_id and config.sticky_message_id:
-            try:
-                channel = interaction.guild.get_channel(config.submission_channel_id)
-                if channel and isinstance(channel, discord.TextChannel):
-                    msg = await channel.fetch_message(config.sticky_message_id)
-                    await msg.delete()
-            except discord.NotFound:
-                pass  # Message already deleted
-            except discord.Forbidden:
-                pass  # No permission to delete
+        await self._try_delete_sticky(interaction.guild, config)
 
-        # Disable the feature and clear sticky message ID
         config.enabled = False
         config.sticky_message_id = None
         repo.save_config(self.firestore, config)
 
-        content = (
+        await self._respond(
+            interaction,
             "✅ **Content Review disabled!**\n\n"
             "The feature has been turned off and the submit button removed.\n"
-            "Existing configuration is preserved. Use `/enable-feature` to re-enable it."
+            "Existing configuration is preserved. Use `/enable-feature` to re-enable it.",
+            use_send=use_send,
         )
-        if use_send:
-            await interaction.response.send_message(content, ephemeral=True)
-        else:
-            await interaction.response.edit_message(content=content, embed=None, view=None)
-
         LOGGER.info("Content review disabled: guild=%s", interaction.guild.id)
+
+    @staticmethod
+    async def _try_delete_sticky(
+        guild: discord.Guild, config: ContentReviewConfig
+    ) -> None:
+        """Attempt to delete the sticky submit-button message, ignoring errors."""
+        if not config.submission_channel_id or not config.sticky_message_id:
+            return
+        try:
+            channel = guild.get_channel(config.submission_channel_id)
+            if channel and isinstance(channel, discord.TextChannel):
+                msg = await channel.fetch_message(config.sticky_message_id)
+                await msg.delete()
+        except (discord.NotFound, discord.Forbidden):
+            pass
 
     async def _disable_content_review_direct(self, interaction: discord.Interaction) -> None:
         """Disable content review (direct command flow)."""
@@ -1181,10 +1189,7 @@ class ContentReviewCog(commands.Cog):
             "• `/time` — Send messages with dynamic timestamps\n\n"
             "The bot needs **Manage Webhooks** permission in channels where `/time` is used."
         )
-        if use_send:
-            await interaction.response.send_message(content, ephemeral=True)
-        else:
-            await interaction.response.edit_message(content=content, embed=None, view=None)
+        await self._respond(interaction, content, use_send=use_send)
 
         LOGGER.info("Time Impersonator enabled: guild=%s", interaction.guild.id)
 
@@ -1208,21 +1213,17 @@ class ContentReviewCog(commands.Cog):
 
         config = ti_repo.get_config(self.firestore, interaction.guild.id)
         if not config or not config.enabled:
-            msg = "Time Impersonator is not enabled."
-            if use_send:
-                await interaction.response.send_message(msg, ephemeral=True)
-            else:
-                await interaction.response.edit_message(content=msg, embed=None, view=None)
+            await self._respond(
+                interaction, "Time Impersonator is not enabled.", use_send=use_send
+            )
             return
 
         config = TimeImpersonatorConfig(guild_id=interaction.guild.id, enabled=False)
         ti_repo.save_config(self.firestore, config)
 
-        content = "✅ **Time Impersonator disabled!**"
-        if use_send:
-            await interaction.response.send_message(content, ephemeral=True)
-        else:
-            await interaction.response.edit_message(content=content, embed=None, view=None)
+        await self._respond(
+            interaction, "✅ **Time Impersonator disabled!**", use_send=use_send
+        )
 
         LOGGER.info("Time Impersonator disabled: guild=%s", interaction.guild.id)
 
@@ -1247,19 +1248,19 @@ class ContentReviewCog(commands.Cog):
         if feature == "prices":
             if not features.albion_prices_enabled:
                 await interaction.response.send_message(
-                    "Albion Price Lookup is not currently enabled.", ephemeral=True
+                    f"{_FEATURE_ALBION_PRICES} is not currently enabled.", ephemeral=True
                 )
                 return
             features.albion_prices_enabled = False
-            feature_name = "Albion Price Lookup"
+            feature_name = _FEATURE_ALBION_PRICES
         else:
             if not features.albion_builds_enabled:
                 await interaction.response.send_message(
-                    "Albion Builds is not currently enabled.", ephemeral=True
+                    f"{_FEATURE_ALBION_BUILDS} is not currently enabled.", ephemeral=True
                 )
                 return
             features.albion_builds_enabled = False
-            feature_name = "Albion Builds"
+            feature_name = _FEATURE_ALBION_BUILDS
 
         albion_repo.save_guild_features(self.firestore, features)
 
@@ -1409,8 +1410,8 @@ class ContentReviewCog(commands.Cog):
 
         features = albion_repo.get_guild_features(self.firestore, interaction.guild.id)
 
-        prices_status = "✅ Enabled" if features and features.albion_prices_enabled else "❌ Disabled"
-        builds_status = "✅ Enabled" if features and features.albion_builds_enabled else "❌ Disabled"
+        prices_status = _STATUS_ENABLED if features and features.albion_prices_enabled else _STATUS_DISABLED
+        builds_status = _STATUS_ENABLED if features and features.albion_builds_enabled else _STATUS_DISABLED
 
         embed = discord.Embed(
             title="⚔️ Albion Features Status",
@@ -1444,18 +1445,18 @@ class ContentReviewCog(commands.Cog):
 
         if feature == "prices":
             features.albion_prices_enabled = True
-            feature_name = "Albion Price Lookup"
+            feature_name = _FEATURE_ALBION_PRICES
         else:
             features.albion_builds_enabled = True
-            feature_name = "Albion Builds"
+            feature_name = _FEATURE_ALBION_BUILDS
 
         albion_repo.save_guild_features(self.firestore, features)
 
-        content = f"✅ **{feature_name} enabled!**\n\nUsers can now use the related commands."
-        if use_send:
-            await interaction.response.send_message(content, ephemeral=True)
-        else:
-            await interaction.response.edit_message(content=content, embed=None, view=None)
+        await self._respond(
+            interaction,
+            f"✅ **{feature_name} enabled!**\n\nUsers can now use the related commands.",
+            use_send=use_send,
+        )
 
         LOGGER.info(
             "Albion %s enabled: guild=%s", feature, interaction.guild.id
@@ -1480,23 +1481,23 @@ class ContentReviewCog(commands.Cog):
         if feature == "prices":
             if not features.albion_prices_enabled:
                 await interaction.response.edit_message(
-                    content="Albion Price Lookup is not currently enabled.",
+                    content=f"{_FEATURE_ALBION_PRICES} is not currently enabled.",
                     embed=None,
                     view=None,
                 )
                 return
             features.albion_prices_enabled = False
-            feature_name = "Albion Price Lookup"
+            feature_name = _FEATURE_ALBION_PRICES
         else:
             if not features.albion_builds_enabled:
                 await interaction.response.edit_message(
-                    content="Albion Builds is not currently enabled.",
+                    content=f"{_FEATURE_ALBION_BUILDS} is not currently enabled.",
                     embed=None,
                     view=None,
                 )
                 return
             features.albion_builds_enabled = False
-            feature_name = "Albion Builds"
+            feature_name = _FEATURE_ALBION_BUILDS
 
         albion_repo.save_guild_features(self.firestore, features)
 
@@ -1643,7 +1644,7 @@ class ContentReviewCog(commands.Cog):
         config = repo.get_config(self.firestore, interaction.guild.id)
         if not config:
             await interaction.response.edit_message(
-                content="Not configured.", embed=None, view=None
+                content=_MSG_NOT_CONFIGURED, embed=None, view=None
             )
             return
 
@@ -1724,7 +1725,7 @@ class ContentReviewCog(commands.Cog):
         config = repo.get_config(self.firestore, interaction.guild.id)
         if not config:
             await interaction.response.edit_message(
-                content="Not configured.", embed=None, view=None
+                content=_MSG_NOT_CONFIGURED, embed=None, view=None
             )
             return
 
@@ -1780,7 +1781,7 @@ class ContentReviewCog(commands.Cog):
 
         repo.save_config(self.firestore, config)
         await interaction.response.send_message(
-            f"✅ Updated sticky message:\n" + "\n".join(f"• {c}" for c in changes),
+            "✅ Updated sticky message:\n" + "\n".join(f"• {c}" for c in changes),
             ephemeral=True,
         )
 
@@ -1881,7 +1882,7 @@ class ContentReviewCog(commands.Cog):
         """Open the submission modal."""
         if not interaction.guild:
             await interaction.response.send_message(
-                "This command can only be used in a server.", ephemeral=True
+                _MSG_GUILD_ONLY, ephemeral=True
             )
             return
 
@@ -2053,7 +2054,7 @@ class ContentReviewCog(commands.Cog):
         """Close the current ticket channel."""
         if not interaction.guild or not interaction.channel:
             await interaction.response.send_message(
-                "This command can only be used in a server.", ephemeral=True
+                _MSG_GUILD_ONLY, ephemeral=True
             )
             return
 
@@ -2121,7 +2122,7 @@ class ContentReviewCog(commands.Cog):
         """Display the reviewer leaderboard."""
         if not interaction.guild:
             await interaction.response.send_message(
-                "This command can only be used in a server.", ephemeral=True
+                _MSG_GUILD_ONLY, ephemeral=True
             )
             return
 
@@ -2147,7 +2148,7 @@ class ContentReviewCog(commands.Cog):
         """View a user's review profile."""
         if not interaction.guild:
             await interaction.response.send_message(
-                "This command can only be used in a server.", ephemeral=True
+                _MSG_GUILD_ONLY, ephemeral=True
             )
             return
 
@@ -2190,7 +2191,6 @@ class ContentReviewCog(commands.Cog):
         if custom_id.startswith("content_review:close_ticket:"):
             submission_id = custom_id.split(":")[-1]
             await self._handle_close_button(interaction, submission_id)
-            return
 
     async def _handle_close_button(
         self, interaction: discord.Interaction, submission_id: str
