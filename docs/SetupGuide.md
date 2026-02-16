@@ -39,8 +39,9 @@ Send messages with dynamic Discord timestamps
 ## 💡 Quick Setup: Content Review
 1. `/enable-feature` → Content Review
 2. Select ticket category
-3. `/config` → Content Review → Add Submission Field
-4. `/config` → Content Review → Add Review Category
+3. (Optional) Set reviewer role during enable prompt, or `/config` → Content Review → Add Role
+4. `/config` → Content Review → Add Submission Field
+5. `/config` → Content Review → Add Review Category
 
 ## 💡 Quick Setup: Time Impersonator
 1. `/enable-feature` → Time Impersonator

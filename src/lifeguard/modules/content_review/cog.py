@@ -40,12 +40,15 @@ from lifeguard.modules.content_review.views.config_ui import (
     ConfigFeatureSelectView,
     ContentReviewConfigView,
     ContentReviewSetupView,
+    EditFormMenuView,
     GeneralConfigView,
     RemoveBotAdminRoleView,
     RemoveCategoryView,
     RemoveFieldView,
     RemoveRoleView,
+    ReviewerRolesMenuView,
     SettingsView,
+    StickyConfigMenuView,
 )
 from lifeguard.modules.content_review.views.submission_modal import SubmissionModal
 from lifeguard.modules.content_review.sticky_service import (
@@ -284,6 +287,18 @@ class ContentReviewCog(commands.Cog):
             return channel
         return None
 
+    @staticmethod
+    def _resolve_reviewer_roles(
+        guild: discord.Guild, config: ContentReviewConfig
+    ) -> list[discord.Role]:
+        """Resolve configured reviewer role IDs to existing role objects."""
+        reviewer_roles: list[discord.Role] = []
+        for role_id in config.reviewer_role_ids:
+            role = guild.get_role(role_id)
+            if role is not None:
+                reviewer_roles.append(role)
+        return reviewer_roles
+
     async def cog_load(self) -> None:
         """Register persistent views on cog load."""
         # We handle persistent buttons via interaction handler
@@ -427,6 +442,30 @@ class ContentReviewCog(commands.Cog):
         )
 
     @staticmethod
+    def _build_sticky_menu_embed() -> discord.Embed:
+        return discord.Embed(
+            title="📌 Sticky Message Menu",
+            description="Edit or repost the submit-button sticky message.",
+            color=discord.Color.blue(),
+        )
+
+    @staticmethod
+    def _build_reviewer_roles_menu_embed() -> discord.Embed:
+        return discord.Embed(
+            title="👥 Review Roles Menu",
+            description="Add or remove roles that can review submissions.",
+            color=discord.Color.blue(),
+        )
+
+    @staticmethod
+    def _build_form_editor_menu_embed() -> discord.Embed:
+        return discord.Embed(
+            title="🧩 Edit Form Menu",
+            description="Manage form fields, review categories, and ticket category.",
+            color=discord.Color.blue(),
+        )
+
+    @staticmethod
     def _build_albion_embed() -> discord.Embed:
         return discord.Embed(
             title="⚔️ Albion Config",
@@ -471,6 +510,30 @@ class ContentReviewCog(commands.Cog):
         await interaction.response.edit_message(
             embed=self._build_content_review_embed(),
             view=ContentReviewConfigView(self),
+            content=None,
+        )
+
+    async def _show_sticky_menu(self, interaction: discord.Interaction) -> None:
+        """Show nested sticky message configuration menu."""
+        await interaction.response.edit_message(
+            embed=self._build_sticky_menu_embed(),
+            view=StickyConfigMenuView(self),
+            content=None,
+        )
+
+    async def _show_reviewer_roles_menu(self, interaction: discord.Interaction) -> None:
+        """Show nested reviewer roles management menu."""
+        await interaction.response.edit_message(
+            embed=self._build_reviewer_roles_menu_embed(),
+            view=ReviewerRolesMenuView(self),
+            content=None,
+        )
+
+    async def _show_form_editor_menu(self, interaction: discord.Interaction) -> None:
+        """Show nested form editor menu."""
+        await interaction.response.edit_message(
+            embed=self._build_form_editor_menu_embed(),
+            view=EditFormMenuView(self),
             content=None,
         )
 
@@ -1087,6 +1150,48 @@ class ContentReviewCog(commands.Cog):
             view=view,
         )
 
+    async def _set_ticket_category(
+        self,
+        interaction: discord.Interaction,
+        category: discord.CategoryChannel,
+        *,
+        use_send: bool = False,
+    ) -> None:
+        """Set the ticket category used for new review tickets."""
+        if not interaction.guild:
+            return
+
+        bot_member = interaction.guild.me
+        has_manage_channels = (
+            bot_member is not None
+            and category.permissions_for(bot_member).manage_channels
+        )
+        if not has_manage_channels:
+            await self._respond(
+                interaction,
+                f"❌ I need **Manage Channels** permission in {category.mention}.",
+                use_send=use_send,
+            )
+            return
+
+        config = repo.get_or_create_config(self.firestore, interaction.guild.id)
+        config.ticket_category_id = category.id
+        repo.save_config(self.firestore, config)
+
+        if use_send:
+            await self._respond(
+                interaction,
+                f"✅ Ticket category set to {category.mention}.",
+                use_send=True,
+            )
+            return
+
+        await interaction.response.edit_message(
+            content=f"✅ Ticket category set to {category.mention}.",
+            embed=None,
+            view=EditFormMenuView(self),
+        )
+
     async def _add_reviewer_role(
         self,
         interaction: discord.Interaction,
@@ -1119,7 +1224,7 @@ class ContentReviewCog(commands.Cog):
             await interaction.response.edit_message(
                 content=f"✅ Added {role.mention} as a reviewer role.",
                 embed=None,
-                view=BackToContentReviewView(self),
+                view=ReviewerRolesMenuView(self),
             )
 
     async def _remove_reviewer_role(
@@ -1154,7 +1259,7 @@ class ContentReviewCog(commands.Cog):
             await interaction.response.edit_message(
                 content=f"✅ Removed {role.mention} from reviewer roles.",
                 embed=None,
-                view=BackToContentReviewView(self),
+                view=ReviewerRolesMenuView(self),
             )
 
     async def _show_remove_field_view(self, interaction: discord.Interaction) -> None:
@@ -1257,7 +1362,7 @@ class ContentReviewCog(commands.Cog):
             await interaction.response.edit_message(
                 content=f"✅ Removed field `{field_id}`.",
                 embed=None,
-                view=BackToContentReviewView(self),
+                view=EditFormMenuView(self),
             )
 
     async def _show_remove_category_view(self, interaction: discord.Interaction) -> None:
@@ -1354,7 +1459,7 @@ class ContentReviewCog(commands.Cog):
             await interaction.response.edit_message(
                 content=f"✅ Removed category `{category_id}`.",
                 embed=None,
-                view=BackToContentReviewView(self),
+                view=EditFormMenuView(self),
             )
 
     async def _set_sticky(
@@ -1562,15 +1667,15 @@ class ContentReviewCog(commands.Cog):
             ),
         }
 
+        reviewer_roles = self._resolve_reviewer_roles(interaction.guild, config)
+
         # Add reviewer roles
-        for role_id in config.reviewer_role_ids:
-            role = interaction.guild.get_role(role_id)
-            if role:
-                overwrites[role] = discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=True,
-                    read_message_history=True,
-                )
+        for role in reviewer_roles:
+            overwrites[role] = discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+            )
 
         try:
             # Create the ticket channel
@@ -1615,6 +1720,17 @@ class ContentReviewCog(commands.Cog):
 
         # Add custom_id with submission ID for persistence
         view.children[0].custom_id = f"content_review:start_review:{submission_id}"
+
+        if reviewer_roles:
+            reviewer_mentions = " ".join(role.mention for role in reviewer_roles)
+            await ticket_channel.send(
+                f"{reviewer_mentions} New content review ticket is ready.",
+                allowed_mentions=discord.AllowedMentions(
+                    roles=True,
+                    users=False,
+                    everyone=False,
+                ),
+            )
 
         # Send welcome message first
         welcome_embed = discord.Embed(
