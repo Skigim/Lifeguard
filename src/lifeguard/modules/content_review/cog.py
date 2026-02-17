@@ -516,10 +516,17 @@ class ContentReviewCog(commands.Cog):
             return
         config = repo.get_config(self.firestore, interaction.guild.id)
         if not config or not config.enabled:
+            from lifeguard.modules.content_review.views.config_ui import ContentReviewDisabledView
+
+            embed = discord.Embed(
+                title="📝 Content Review",
+                description="Content Review is **not enabled**. Enable it to get started.",
+                color=discord.Color.greyple(),
+            )
             await interaction.response.edit_message(
-                content="Content Review is not enabled. Use `/enable-feature` first.",
-                embed=None,
-                view=None,
+                embed=embed,
+                view=ContentReviewDisabledView(self),
+                content=None,
             )
             return
         await interaction.response.edit_message(
@@ -564,6 +571,36 @@ class ContentReviewCog(commands.Cog):
             embed=self._build_voice_lobby_embed(),
             view=VoiceLobbyConfigView(self),
             content=None,
+        )
+
+    async def _show_time_impersonator_menu(self, interaction: discord.Interaction) -> None:
+        from lifeguard.modules.content_review.views.config_ui import TimeImpersonatorConfigView
+
+        embed = discord.Embed(
+            title="🕐 Time Impersonator Config",
+            description="Enable, disable, or view status of the Time Impersonator feature.",
+            color=discord.Color.blue(),
+        )
+        await interaction.response.edit_message(
+            embed=embed,
+            view=TimeImpersonatorConfigView(self),
+            content=None,
+        )
+
+    async def _show_time_impersonator_status(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            return
+
+        from lifeguard.modules.content_review.views.config_ui import TimeImpersonatorConfigView
+        from lifeguard.modules.time_impersonator import repo as ti_repo
+
+        config = ti_repo.get_config(self.firestore, interaction.guild.id)
+        status = _STATUS_ENABLED if config and config.enabled else _STATUS_DISABLED
+
+        await interaction.response.edit_message(
+            content=f"**Time Impersonator:** {status}",
+            embed=None,
+            view=TimeImpersonatorConfigView(self),
         )
 
     async def _enable_content_review(

@@ -186,10 +186,11 @@ async def setup_hook() -> None:
 
 ## Optional: Feature Flags
 
-If your module should be toggleable per-guild, you need two things:
+If your module should be toggleable per-guild, you need:
 
-1. A feature check decorator to guard your commands
-2. Integration with the `/enable-feature` and `/disable-feature` dropdowns
+1. A feature config model and repo CRUD
+2. A feature check decorator to guard your commands
+3. A config sub-menu wired into the central `/config` command
 
 ### 1. Create a Config Model
 
@@ -275,104 +276,136 @@ async def my_command(self, interaction: discord.Interaction) -> None:
     ...
 ```
 
-### 5. Integrate with Enable/Disable Flow
+### 5. Wiring into the Config Menu
 
-The central enable/disable UI is in `content_review/cog.py`. To add your module:
+All feature management flows through the central `/config` command
+(hosted in `ContentReviewCog`). Every module gets its own sub-menu
+so users can enable, disable, and configure the feature from one place.
 
-**a) Add to `EnableFeatureSelect.__init__`:**
+#### a) Create a config sub-menu view
+
+Add your view to `content_review/views/config_ui.py`:
 
 ```python
-options = [
-    # ... existing options ...
-    discord.SelectOption(
-        label="<Name>",
-        value="<name>",
-        description="Brief description of your feature",
-        emoji="🔧",  # Choose an appropriate emoji
-    ),
-]
+class <Name>ConfigView(discord.ui.View):
+    """Config sub-menu for <Name> feature."""
+
+    def __init__(self, cog: "ContentReviewCog") -> None:
+        super().__init__(timeout=120)
+        self.cog = cog
+
+    @discord.ui.button(label="Status", style=discord.ButtonStyle.secondary, emoji="📋", row=0)
+    async def status_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self.cog._show_<name>_status(interaction)
+
+    @discord.ui.button(label="Enable", style=discord.ButtonStyle.success, emoji="✅", row=0)
+    async def enable_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self.cog._enable_<name>(interaction)
+
+    @discord.ui.button(label="Disable", style=discord.ButtonStyle.danger, emoji="❌", row=0)
+    async def disable_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self.cog._disable_<name>(interaction)
+
+    # Add more buttons for module-specific settings as needed
+
+    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    async def back_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self.cog._show_config_home(interaction)
 ```
 
-**b) Add callback handler in `EnableFeatureSelect.callback`:**
+#### b) Add a button to `ConfigFeatureSelectView`
 
 ```python
-elif self.values[0] == "<name>":
-    await self.cog._enable_<name>(interaction)
+@discord.ui.button(
+    label="<Name>",
+    style=discord.ButtonStyle.secondary,
+    emoji="🔧",
+    row=<row>,
+)
+async def <name>_button(
+    self, interaction: discord.Interaction, button: discord.ui.Button
+) -> None:
+    await self.cog._show_<name>_menu(interaction)
 ```
 
-**c) Add to `DisableFeatureSelect.__init__`:**
+#### c) Add cog helper methods to `ContentReviewCog`
 
 ```python
-options = [
-    # ... existing options ...
-    discord.SelectOption(
-        label="<Name>",
-        value="<name>",
-        description="Disable <name> feature",
-        emoji="🔧",
-    ),
-]
-```
+async def _show_<name>_menu(self, interaction: discord.Interaction) -> None:
+    from lifeguard.modules.content_review.views.config_ui import <Name>ConfigView
 
-**d) Add callback handler in `DisableFeatureSelect.callback`:**
+    embed = discord.Embed(
+        title="🔧 <Name> Config",
+        description="Configure the <Name> feature.",
+        color=discord.Color.blue(),
+    )
+    await interaction.response.edit_message(
+        embed=embed, view=<Name>ConfigView(self), content=None
+    )
 
-```python
-elif self.values[0] == "<name>":
-    await self.cog._disable_<name>(interaction)
-```
-
-**e) Add helper methods to `ContentReviewCog`:**
-
-```python
-async def _enable_<name>(self, interaction: discord.Interaction) -> None:
-    """Enable <name> feature."""
+async def _show_<name>_status(self, interaction: discord.Interaction) -> None:
     if not interaction.guild:
         return
+    from lifeguard.modules.<name> import repo as <name>_repo
+    from lifeguard.modules.content_review.views.config_ui import <Name>ConfigView
 
+    config = <name>_repo.get_config(self.firestore, interaction.guild.id)
+    status = "✅ Enabled" if config and config.enabled else "❌ Disabled"
+    await interaction.response.edit_message(
+        content=f"**<Name>:** {status}", embed=None, view=<Name>ConfigView(self)
+    )
+
+async def _enable_<name>(
+    self, interaction: discord.Interaction, *, use_send: bool = False
+) -> None:
+    if not interaction.guild:
+        return
     from lifeguard.modules.<name> import repo as <name>_repo
     from lifeguard.modules.<name>.config import <Name>Config
 
     config = <Name>Config(guild_id=interaction.guild.id, enabled=True)
     <name>_repo.save_config(self.firestore, config)
+    await self._respond(interaction, "✅ **<Name> enabled!**", use_send=use_send)
 
-    await interaction.response.edit_message(
-        content=(
-            "✅ **<Name> enabled!**\n\n"
-            "Description of what users can now do."
-        ),
-        embed=None,
-        view=None,
-    )
-
-    LOGGER.info("<Name> enabled: guild=%s", interaction.guild.id)
-
-
-async def _disable_<name>(self, interaction: discord.Interaction) -> None:
-    """Disable <name> feature."""
+async def _disable_<name>(
+    self, interaction: discord.Interaction, *, use_send: bool = False
+) -> None:
     if not interaction.guild:
         return
-
     from lifeguard.modules.<name> import repo as <name>_repo
     from lifeguard.modules.<name>.config import <Name>Config
 
     config = <name>_repo.get_config(self.firestore, interaction.guild.id)
     if not config or not config.enabled:
-        await interaction.response.edit_message(
-            content="<Name> is not enabled.", embed=None, view=None
-        )
+        await self._respond(interaction, "<Name> is not enabled.", use_send=use_send)
         return
-
     config = <Name>Config(guild_id=interaction.guild.id, enabled=False)
     <name>_repo.save_config(self.firestore, config)
-
-    await interaction.response.edit_message(
-        content="✅ **<Name> disabled!**",
-        embed=None,
-        view=None,
-    )
-
-    LOGGER.info("<Name> disabled: guild=%s", interaction.guild.id)
+    await self._respond(interaction, "✅ **<Name> disabled!**", use_send=use_send)
 ```
+
+#### d) Register in the feature registry
+
+Add your feature to the `FEATURES` list in `cog.py` so `enable-feature`
+and `disable-feature` autocomplete picks it up:
+
+```python
+FEATURES: list[tuple[str, str, str, bool]] = [
+    # ... existing ...
+    ("<name>", "<Name>", "Brief description", False),
+]
+```
+
+Then add the corresponding `elif` branches in `enable_feature_command`
+and `disable_feature_command`.
 
 ## Optional: Discord UI Components
 

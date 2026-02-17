@@ -48,23 +48,6 @@ class ConfigFeatureSelectView(discord.ui.View):
         if not cog.bot.get_cog("AlbionCog"):
             self.remove_item(self.albion_button)
 
-    async def _show_feature_menu(
-        self, interaction: discord.Interaction, feature: str
-    ) -> None:
-        if feature == "general":
-            await self.cog._show_general_menu(interaction)
-            return
-
-        if feature == "content_review":
-            await self.cog._show_content_review_menu(interaction)
-            return
-
-        if feature == "voice_lobby":
-            await self.cog._show_voice_lobby_menu(interaction)
-            return
-
-        await self.cog._show_albion_menu(interaction)
-
     @discord.ui.button(
         label="General Settings",
         style=discord.ButtonStyle.secondary,
@@ -74,7 +57,7 @@ class ConfigFeatureSelectView(discord.ui.View):
     async def general_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        await self._show_feature_menu(interaction, "general")
+        await self.cog._show_general_menu(interaction)
 
     @discord.ui.button(
         label="Content Review",
@@ -85,29 +68,40 @@ class ConfigFeatureSelectView(discord.ui.View):
     async def content_review_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        await self._show_feature_menu(interaction, "content_review")
+        await self.cog._show_content_review_menu(interaction)
+
+    @discord.ui.button(
+        label="Time Impersonator",
+        style=discord.ButtonStyle.secondary,
+        emoji="🕐",
+        row=0,
+    )
+    async def time_impersonator_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self.cog._show_time_impersonator_menu(interaction)
 
     @discord.ui.button(
         label="Voice Lobby",
         style=discord.ButtonStyle.secondary,
         emoji="🎧",
-        row=0,
+        row=1,
     )
     async def voice_lobby_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        await self._show_feature_menu(interaction, "voice_lobby")
+        await self.cog._show_voice_lobby_menu(interaction)
 
     @discord.ui.button(
         label="Albion Features",
         style=discord.ButtonStyle.secondary,
         emoji="⚔️",
-        row=0,
+        row=1,
     )
     async def albion_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        await self._show_feature_menu(interaction, "albion")
+        await self.cog._show_albion_menu(interaction)
 
 
 class GeneralConfigView(discord.ui.View):
@@ -1250,3 +1244,64 @@ class BackToAlbionView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._show_albion_menu(interaction)
+
+
+class ContentReviewDisabledView(discord.ui.View):
+    """Shown when Content Review is not enabled; offers Enable or Back."""
+
+    def __init__(self, cog: "ContentReviewCog") -> None:
+        super().__init__(timeout=120)
+        self.cog = cog
+
+    @discord.ui.button(label="Enable Content Review", style=discord.ButtonStyle.success, emoji="✅")
+    async def enable_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        view = ContentReviewSetupView(self.cog)
+        embed = discord.Embed(
+            title="📝 Content Review Setup",
+            description=(
+                "Select the **ticket category** where review channels will be created.\n\n"
+                "The submit button will be posted in the current channel."
+            ),
+            color=discord.Color.blue(),
+        )
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+
+    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️")
+    async def back_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self.cog._show_config_home(interaction)
+
+
+class TimeImpersonatorConfigView(discord.ui.View):
+    """Config sub-menu for Time Impersonator feature."""
+
+    def __init__(self, cog: "ContentReviewCog") -> None:
+        super().__init__(timeout=120)
+        self.cog = cog
+
+    @discord.ui.button(label="Status", style=discord.ButtonStyle.secondary, emoji="📋", row=0)
+    async def status_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self.cog._show_time_impersonator_status(interaction)
+
+    @discord.ui.button(label="Enable", style=discord.ButtonStyle.success, emoji="✅", row=0)
+    async def enable_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self.cog._enable_time_impersonator(interaction)
+
+    @discord.ui.button(label="Disable", style=discord.ButtonStyle.danger, emoji="❌", row=0)
+    async def disable_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self.cog._disable_time_impersonator(interaction)
+
+    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    async def back_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self.cog._show_config_home(interaction)

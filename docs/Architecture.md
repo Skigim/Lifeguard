@@ -14,10 +14,12 @@ src/lifeguard/
 ├── firestore_client.py  # Firebase initialization
 ├── cogs/                # Core Discord cogs
 │   └── core.py          # Basic commands (ping, purge)
-├── db/                   # SQLAlchemy layer (legacy/unused)
-└── modules/              # Feature modules
+├── db/                  # SQLAlchemy layer (legacy/unused)
+└── modules/             # Feature modules
     ├── albion/           # Albion Online integration
-    └── content_review/   # Submission review system
+    ├── content_review/   # Submission review system
+    ├── time_impersonator/# Dynamic Discord timestamps via webhook
+    └── voice_lobby/      # Temporary voice channels from entry channel
 ```
 
 ## Data Flow
@@ -70,10 +72,41 @@ Bot instance carries shared resources as attributes:
 - `bot.lifeguard_http_session` - aiohttp session for API calls
 - `bot.lifeguard_firestore` - Firestore client
 
+## Central Configuration Menu (`/config`)
+
+All feature management flows through the `/config` slash command, which is
+hosted in `ContentReviewCog`. The menu hierarchy:
+
+```
+/config
+├── General Settings        → Bot admin roles
+├── Content Review          → Enable/disable, sticky, roles, form, settings
+├── Time Impersonator       → Enable/disable, status
+├── Voice Lobby             → Enable/disable, entry channel, defaults, roles
+└── Albion Features         → Enable/disable prices & builds, status
+```
+
+### Key principles
+1. **Every module gets a sub-menu** — each feature is wired into
+   `ConfigFeatureSelectView` as its own button.
+2. **Enable/disable lives inside the sub-menu** — users can toggle a feature
+   on or off from within its config page. No feature blocks access to its
+   own config when disabled; instead it shows an "Enable" action.
+3. **`/enable-feature` and `/disable-feature` are convenience shortcuts** —
+   they provide quick autocomplete-driven access but ultimately call the
+   same enable/disable helpers used by the config UI.
+4. **Config views call back to the cog** — all views hold a reference to the
+   cog and delegate logic to `_show_*` / `_enable_*` / `_disable_*` methods.
+
+### Adding a new feature to the config menu
+See `docs/ModuleDevelopment.md` § "Wiring into the Config Menu".
+
 ## Feature Flags
 Guild-level feature toggles stored in Firestore:
-- Checked via decorators (`@require_content_review()`)
+- Each module has its own config collection (`content_review_configs`, `voice_lobby_configs`, etc.)
+- Checked via decorators (`@require_content_review()`, `@require_time_impersonator()`)
 - Raise `FeatureDisabledError` when disabled
+- Toggled via the `/config` sub-menus or the `/enable-feature` / `/disable-feature` shortcuts
 
 ## Database Layers
 
