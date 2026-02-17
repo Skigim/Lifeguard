@@ -29,12 +29,8 @@ from lifeguard.modules.content_review.views.review_wizard import (
     ReviewWizardView,
 )
 from lifeguard.modules.content_review.views.config_ui import (
-    AddCategoryModal,
-    AddFieldModal,
-    AddRoleView,
     BackToContentReviewView,
     ContentReviewConfigView,
-    ContentReviewSetupView,
     EditFormMenuView,
     RemoveCategoryView,
     RemoveFieldView,
@@ -71,7 +67,10 @@ _ALLOWED_FIELD_TYPES = frozenset({"short_text", "paragraph", "url"})
 
 def require_content_review():
     """Check that content review is enabled for this guild."""
-    async def predicate(interaction: discord.Interaction) -> bool:  # NOSONAR - discord.py requires async
+
+    async def predicate(
+        interaction: discord.Interaction,
+    ) -> bool:  # NOSONAR - discord.py requires async
         if not interaction.guild:
             return False
         cog = interaction.client.get_cog("ContentReviewCog")
@@ -81,6 +80,7 @@ def require_content_review():
         if not config or not config.enabled:
             raise FeatureDisabledError(_FEATURE_CONTENT_REVIEW)
         return True
+
     return app_commands.check(predicate)
 
 
@@ -132,7 +132,9 @@ class _CloseTicketConfirmView(discord.ui.View):
         self.cog = cog
         self.submission = submission
 
-    @discord.ui.button(label="Close & Delete", style=discord.ButtonStyle.danger, emoji="🔒")
+    @discord.ui.button(
+        label="Close & Delete", style=discord.ButtonStyle.danger, emoji="🔒"
+    )
     async def confirm(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -170,7 +172,9 @@ class ContentReviewCog(commands.Cog):
         if use_send:
             await interaction.response.send_message(content, ephemeral=True)
         else:
-            await interaction.response.edit_message(content=content, embed=None, view=None)
+            await interaction.response.edit_message(
+                content=content, embed=None, view=None
+            )
 
     @staticmethod
     def _extract_discord_id(value: str) -> int | None:
@@ -224,7 +228,9 @@ class ContentReviewCog(commands.Cog):
 
     # --- Config Menu Navigation (called by ConfigCog) ---
 
-    async def _show_content_review_config(self, interaction: discord.Interaction) -> None:
+    async def _show_content_review_config(
+        self, interaction: discord.Interaction
+    ) -> None:
         """Show the Content Review config sub-menu.
 
         This is the entry point called by ConfigCog when navigating to
@@ -302,8 +308,16 @@ class ContentReviewCog(commands.Cog):
         status = _STATUS_ENABLED if config.enabled else _STATUS_DISABLED
         embed.add_field(name="Status", value=status, inline=True)
 
-        sub_ch = f"<#{config.submission_channel_id}>" if config.submission_channel_id else "Not set"
-        cat_ch = f"<#{config.ticket_category_id}>" if config.ticket_category_id else "Not set"
+        sub_ch = (
+            f"<#{config.submission_channel_id}>"
+            if config.submission_channel_id
+            else "Not set"
+        )
+        cat_ch = (
+            f"<#{config.ticket_category_id}>"
+            if config.ticket_category_id
+            else "Not set"
+        )
         embed.add_field(name="Submit Channel", value=sub_ch, inline=True)
         embed.add_field(name="Ticket Category", value=cat_ch, inline=True)
 
@@ -342,7 +356,9 @@ class ContentReviewCog(commands.Cog):
         sticky = f"**Title:** {config.sticky_title}\n**Button:** {config.sticky_button_emoji} {config.sticky_button_label}"
         embed.add_field(name="Sticky Message", value=sticky, inline=False)
 
-        await interaction.response.edit_message(embed=embed, view=BackToContentReviewView(self))
+        await interaction.response.edit_message(
+            embed=embed, view=BackToContentReviewView(self)
+        )
 
     # --- Enable / Disable ---
 
@@ -368,7 +384,9 @@ class ContentReviewCog(commands.Cog):
 
         # Resolve the partial channel to actual category
         ticket_category = interaction.guild.get_channel(ticket_category_partial.id)
-        if not ticket_category or not isinstance(ticket_category, discord.CategoryChannel):
+        if not ticket_category or not isinstance(
+            ticket_category, discord.CategoryChannel
+        ):
             await self._respond(
                 interaction,
                 "❌ Could not find that category.",
@@ -411,7 +429,9 @@ class ContentReviewCog(commands.Cog):
         config.sticky_message_id = sticky_msg.id
         repo.save_config(self.firestore, config)
 
-        reviewer_msg = f"\n• Reviewer role: {reviewer_role.mention}" if reviewer_role else ""
+        reviewer_msg = (
+            f"\n• Reviewer role: {reviewer_role.mention}" if reviewer_role else ""
+        )
         success_message = (
             f"✅ **Content Review enabled!**\n\n"
             f"• Submit button posted in this channel\n"
@@ -467,7 +487,9 @@ class ContentReviewCog(commands.Cog):
 
         config = repo.get_config(self.firestore, interaction.guild.id)
         if not config or not config.enabled:
-            await self._respond(interaction, "Content review is not enabled.", use_send=use_send)
+            await self._respond(
+                interaction, "Content review is not enabled.", use_send=use_send
+            )
             return
 
         await self._try_delete_sticky(interaction.guild, config)
@@ -688,7 +710,9 @@ class ContentReviewCog(commands.Cog):
             return
 
         original_count = len(config.submission_fields)
-        config.submission_fields = [f for f in config.submission_fields if f.id != field_id]
+        config.submission_fields = [
+            f for f in config.submission_fields if f.id != field_id
+        ]
 
         if len(config.submission_fields) == original_count:
             await self._respond(
@@ -714,7 +738,9 @@ class ContentReviewCog(commands.Cog):
 
     # --- Review Category Helpers ---
 
-    async def _show_remove_category_view(self, interaction: discord.Interaction) -> None:
+    async def _show_remove_category_view(
+        self, interaction: discord.Interaction
+    ) -> None:
         """Show the view to remove a review category."""
         if not interaction.guild:
             return
@@ -794,7 +820,9 @@ class ContentReviewCog(commands.Cog):
             return
 
         original_count = len(config.review_categories)
-        config.review_categories = [c for c in config.review_categories if c.id != category_id]
+        config.review_categories = [
+            c for c in config.review_categories if c.id != category_id
+        ]
 
         if len(config.review_categories) == original_count:
             await self._respond(
@@ -947,7 +975,9 @@ class ContentReviewCog(commands.Cog):
             view=SettingsView(self),
         )
 
-    async def _set_timeout(self, interaction: discord.Interaction, minutes: int) -> None:
+    async def _set_timeout(
+        self, interaction: discord.Interaction, minutes: int
+    ) -> None:
         """Set review timeout."""
         if not interaction.guild:
             return
@@ -962,7 +992,9 @@ class ContentReviewCog(commands.Cog):
 
     async def _repost_button(self, interaction: discord.Interaction) -> None:
         """Re-post the submit button in the current channel."""
-        if not interaction.guild or not isinstance(interaction.channel, discord.TextChannel):
+        if not interaction.guild or not isinstance(
+            interaction.channel, discord.TextChannel
+        ):
             await interaction.response.edit_message(
                 content="Use this in a text channel.", embed=None, view=None
             )
@@ -995,9 +1027,7 @@ class ContentReviewCog(commands.Cog):
     async def submit_command(self, interaction: discord.Interaction) -> None:
         """Open the submission modal."""
         if not interaction.guild:
-            await interaction.response.send_message(
-                _MSG_GUILD_ONLY, ephemeral=True
-            )
+            await interaction.response.send_message(_MSG_GUILD_ONLY, ephemeral=True)
             return
 
         config = repo.get_config(self.firestore, interaction.guild.id)
@@ -1175,9 +1205,7 @@ class ContentReviewCog(commands.Cog):
         )
 
     @staticmethod
-    def _can_close_ticket(
-        user: discord.Member, submission: Submission
-    ) -> bool:
+    def _can_close_ticket(user: discord.Member, submission: Submission) -> bool:
         """Check whether *user* is allowed to close *submission*'s ticket."""
         return (
             user.id == submission.submitter_id
@@ -1190,9 +1218,7 @@ class ContentReviewCog(commands.Cog):
     async def close_ticket_command(self, interaction: discord.Interaction) -> None:
         """Close the current ticket channel."""
         if not interaction.guild or not interaction.channel:
-            await interaction.response.send_message(
-                _MSG_GUILD_ONLY, ephemeral=True
-            )
+            await interaction.response.send_message(_MSG_GUILD_ONLY, ephemeral=True)
             return
 
         # Find submission for this channel
@@ -1231,7 +1257,9 @@ class ContentReviewCog(commands.Cog):
         self, interaction: discord.Interaction, submission: Submission
     ) -> None:
         """Close a ticket channel (called after confirmation)."""
-        if not interaction.guild or not isinstance(interaction.channel, discord.TextChannel):
+        if not interaction.guild or not isinstance(
+            interaction.channel, discord.TextChannel
+        ):
             return
 
         submission.status = "closed"
@@ -1257,9 +1285,7 @@ class ContentReviewCog(commands.Cog):
     async def leaderboard_command(self, interaction: discord.Interaction) -> None:
         """Display the reviewer leaderboard."""
         if not interaction.guild:
-            await interaction.response.send_message(
-                _MSG_GUILD_ONLY, ephemeral=True
-            )
+            await interaction.response.send_message(_MSG_GUILD_ONLY, ephemeral=True)
             return
 
         config = repo.get_config(self.firestore, interaction.guild.id)
@@ -1283,9 +1309,7 @@ class ContentReviewCog(commands.Cog):
     ) -> None:
         """View a user's review profile."""
         if not interaction.guild:
-            await interaction.response.send_message(
-                _MSG_GUILD_ONLY, ephemeral=True
-            )
+            await interaction.response.send_message(_MSG_GUILD_ONLY, ephemeral=True)
             return
 
         target_user = user or interaction.user
@@ -1408,9 +1432,7 @@ class ContentReviewCog(commands.Cog):
                     )
                     return
 
-            has_role = any(
-                role.id in config.reviewer_role_ids for role in member.roles
-            )
+            has_role = any(role.id in config.reviewer_role_ids for role in member.roles)
             if not has_role:
                 await interaction.response.send_message(
                     "You don't have permission to review submissions.",
@@ -1468,7 +1490,9 @@ class ContentReviewCog(commands.Cog):
         )
 
         embed = wizard.build_embed()
-        await interaction.response.send_message(embed=embed, view=wizard, ephemeral=True)
+        await interaction.response.send_message(
+            embed=embed, view=wizard, ephemeral=True
+        )
 
         # Track the wizard
         key = f"{interaction.user.id}:{submission_id}"

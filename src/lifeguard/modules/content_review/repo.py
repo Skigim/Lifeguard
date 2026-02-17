@@ -57,7 +57,9 @@ def _generate_id() -> str:
 
 def get_config(firestore: FirestoreClient, guild_id: int) -> ContentReviewConfig | None:
     """Get the content review configuration for a guild."""
-    doc = firestore.collection(CONFIGS_COLLECTION).document(_guild_doc_id(guild_id)).get()
+    doc = (
+        firestore.collection(CONFIGS_COLLECTION).document(_guild_doc_id(guild_id)).get()
+    )
     if not doc.exists:
         return None
     return ContentReviewConfig.from_firestore(doc.to_dict())
@@ -75,7 +77,9 @@ def delete_config(firestore: FirestoreClient, guild_id: int) -> None:
     firestore.collection(CONFIGS_COLLECTION).document(_guild_doc_id(guild_id)).delete()
 
 
-def get_or_create_config(firestore: FirestoreClient, guild_id: int) -> ContentReviewConfig:
+def get_or_create_config(
+    firestore: FirestoreClient, guild_id: int
+) -> ContentReviewConfig:
     """Get existing config or create a default one."""
     config = get_config(firestore, guild_id)
     if config is None:
@@ -148,7 +152,9 @@ def claim_submission_for_review(
 ) -> Submission:
     """Atomically claim a pending submission for review."""
     transaction = firestore.transaction()
-    submission_ref = firestore.collection(SUBMISSIONS_COLLECTION).document(submission_id)
+    submission_ref = firestore.collection(SUBMISSIONS_COLLECTION).document(
+        submission_id
+    )
 
     @firestore_sdk.transactional
     def _claim(tx):
