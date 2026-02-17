@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import TYPE_CHECKING
 
@@ -73,11 +74,14 @@ def create_bot(config: Config) -> commands.Bot:
         bot.lifeguard_firestore = firestore_client  # type: ignore[attr-defined]
 
         await bot.add_cog(_load_core_cog(bot))
+        await bot.add_cog(_load_config_cog(bot))
         # Albion cog disabled for now
         # await bot.add_cog(_load_albion_cog(bot, config, session))
         await bot.add_cog(_load_content_review_cog(bot))
         await bot.add_cog(_load_time_impersonator_cog(bot))
         await bot.add_cog(_load_voice_lobby_cog(bot))
+
+    original_close = bot.close
 
     @bot.event
     async def close() -> None:
@@ -87,9 +91,13 @@ def create_bot(config: Config) -> commands.Bot:
 
         firestore_client = getattr(bot, "lifeguard_firestore", None)
         if firestore_client is not None:
-            close = getattr(firestore_client, "close", None)
-            if callable(close):
-                close()
+            close_fn = getattr(firestore_client, "close", None)
+            if callable(close_fn):
+                result = close_fn()
+                if inspect.isawaitable(result):
+                    await result
+
+        await original_close()
 
     return bot
 
@@ -98,6 +106,12 @@ def _load_core_cog(bot: commands.Bot) -> commands.Cog:
     from lifeguard.cogs.core import CoreCog
 
     return CoreCog(bot)
+
+
+def _load_config_cog(bot: commands.Bot) -> commands.Cog:
+    from lifeguard.cogs.config_cog import ConfigCog
+
+    return ConfigCog(bot)
 
 
 def _load_albion_cog(

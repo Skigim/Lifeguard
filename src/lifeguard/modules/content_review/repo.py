@@ -5,6 +5,8 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
+from google.cloud import firestore as firestore_sdk
+
 from lifeguard.modules.content_review.config import ContentReviewConfig
 from lifeguard.modules.content_review.models import (
     ReviewSession,
@@ -21,6 +23,18 @@ CONFIGS_COLLECTION = "content_review_configs"
 SUBMISSIONS_COLLECTION = "content_review_submissions"
 REVIEWS_COLLECTION = "content_review_reviews"
 PROFILES_COLLECTION = "content_review_profiles"
+
+
+class SubmissionClaimError(Exception):
+    """Raised when a submission cannot be claimed for review."""
+
+
+class SubmissionNotFoundError(SubmissionClaimError):
+    """Raised when a submission no longer exists."""
+
+
+class SubmissionAlreadyClaimedError(SubmissionClaimError):
+    """Raised when a submission is no longer pending."""
 
 
 def _guild_doc_id(guild_id: int) -> str:
@@ -127,6 +141,38 @@ def get_pending_submissions(
         .stream()
     )
     return [Submission.from_firestore(doc.to_dict()) for doc in docs]
+
+
+def claim_submission_for_review(
+    firestore: FirestoreClient, submission_id: str, reviewer_id: int
+) -> Submission:
+    """Atomically claim a pending submission for review."""
+    transaction = firestore.transaction()
+    submission_ref = firestore.collection(SUBMISSIONS_COLLECTION).document(submission_id)
+
+    @firestore_sdk.transactional
+    def _claim(tx):
+        doc = submission_ref.get(transaction=tx)
+        if not doc.exists:
+            raise SubmissionNotFoundError(submission_id)
+
+        submission = Submission.from_firestore(doc.to_dict())
+        if submission.status != "pending":
+            raise SubmissionAlreadyClaimedError(submission.status)
+
+        tx.update(
+            submission_ref,
+            {
+                "status": "in_review",
+                "reviewer_id": reviewer_id,
+            },
+        )
+
+        submission.status = "in_review"
+        submission.reviewer_id = reviewer_id
+        return submission
+
+    return _claim(transaction)
 
 
 # --- Review CRUD ---

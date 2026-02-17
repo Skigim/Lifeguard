@@ -279,18 +279,18 @@ async def my_command(self, interaction: discord.Interaction) -> None:
 ### 5. Wiring into the Config Menu
 
 All feature management flows through the central `/config` command
-(hosted in `ContentReviewCog`). Every module gets its own sub-menu
+(hosted in `ConfigCog` at `cogs/config_cog.py`). Every module gets its own sub-menu
 so users can enable, disable, and configure the feature from one place.
 
 #### a) Create a config sub-menu view
 
-Add your view to `content_review/views/config_ui.py`:
+Add your view to `cogs/config_views.py`:
 
 ```python
 class <Name>ConfigView(discord.ui.View):
     """Config sub-menu for <Name> feature."""
 
-    def __init__(self, cog: "ContentReviewCog") -> None:
+    def __init__(self, cog: "ConfigCog") -> None:
         super().__init__(timeout=120)
         self.cog = cog
 
@@ -336,11 +336,11 @@ async def <name>_button(
     await self.cog._show_<name>_menu(interaction)
 ```
 
-#### c) Add cog helper methods to `ContentReviewCog`
+#### c) Add cog helper methods to `ConfigCog`
 
 ```python
 async def _show_<name>_menu(self, interaction: discord.Interaction) -> None:
-    from lifeguard.modules.content_review.views.config_ui import <Name>ConfigView
+    from lifeguard.cogs.config_views import <Name>ConfigView
 
     embed = discord.Embed(
         title="🔧 <Name> Config",
@@ -355,7 +355,7 @@ async def _show_<name>_status(self, interaction: discord.Interaction) -> None:
     if not interaction.guild:
         return
     from lifeguard.modules.<name> import repo as <name>_repo
-    from lifeguard.modules.content_review.views.config_ui import <Name>ConfigView
+    from lifeguard.cogs.config_views import <Name>ConfigView
 
     config = <name>_repo.get_config(self.firestore, interaction.guild.id)
     status = "✅ Enabled" if config and config.enabled else "❌ Disabled"
@@ -394,7 +394,7 @@ async def _disable_<name>(
 
 #### d) Register in the feature registry
 
-Add your feature to the `FEATURES` list in `cog.py` so `enable-feature`
+Add your feature to the `FEATURES` list in `cogs/config_cog.py` so `enable-feature`
 and `disable-feature` autocomplete picks it up:
 
 ```python

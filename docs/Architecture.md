@@ -13,7 +13,9 @@ src/lifeguard/
 ├── logging_config.py    # Logging setup
 ├── firestore_client.py  # Firebase initialization
 ├── cogs/                # Core Discord cogs
-│   └── core.py          # Basic commands (ping, purge)
+│   ├── core.py          # Basic commands (ping, purge)
+│   ├── config_cog.py    # /config, /enable-feature, /disable-feature
+│   └── config_views.py  # Cross-cutting config UI views
 ├── db/                  # SQLAlchemy layer (legacy/unused)
 └── modules/             # Feature modules
     ├── albion/           # Albion Online integration
@@ -75,7 +77,7 @@ Bot instance carries shared resources as attributes:
 ## Central Configuration Menu (`/config`)
 
 All feature management flows through the `/config` slash command, which is
-hosted in `ContentReviewCog`. The menu hierarchy:
+hosted in `ConfigCog` (`cogs/config_cog.py`). The menu hierarchy:
 
 ```
 /config
