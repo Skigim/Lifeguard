@@ -49,6 +49,7 @@ from lifeguard.modules.content_review.views.config_ui import (
     ReviewerRolesMenuView,
     SettingsView,
     StickyConfigMenuView,
+    VoiceLobbyConfigView,
 )
 from lifeguard.modules.content_review.views.submission_modal import SubmissionModal
 from lifeguard.modules.content_review.sticky_service import (
@@ -74,6 +75,7 @@ _STATUS_DISABLED = "❌ Disabled"
 _FEATURE_ALBION_PRICES = "Albion Price Lookup"
 _FEATURE_ALBION_BUILDS = "Albion Builds"
 _FEATURE_CONTENT_REVIEW = "Content Review"
+_FEATURE_VOICE_LOBBY = "Voice Lobby"
 
 
 # --- Feature Registry ---
@@ -83,6 +85,7 @@ _FEATURE_CONTENT_REVIEW = "Content Review"
 FEATURES: list[tuple[str, str, str, bool]] = [
     ("content_review", "Content Review", "Review system with tickets, scoring, and leaderboards", True),
     ("time_impersonator", "Time Impersonator", "Send messages with dynamic Discord timestamps", False),
+    ("voice_lobby", "Voice Lobby", "Temporary voice lobbies created from an entry channel", False),
     ("albion_prices", "Albion Prices", "Look up Albion Online market prices", False),
     ("albion_builds", "Albion Builds", "Share and browse Albion Online builds", False),
 ]
@@ -354,6 +357,8 @@ class ContentReviewCog(commands.Cog):
         # Simple features enable directly
         if feature == "time_impersonator":
             await self._enable_time_impersonator(interaction, use_send=True)
+        elif feature == "voice_lobby":
+            await self._enable_voice_lobby(interaction, use_send=True)
         elif feature == "albion_prices":
             await self._enable_albion_feature(interaction, "prices", use_send=True)
         elif feature == "albion_builds":
@@ -392,6 +397,8 @@ class ContentReviewCog(commands.Cog):
             await self._disable_content_review_direct(interaction)
         elif feature == "time_impersonator":
             await self._disable_time_impersonator_direct(interaction)
+        elif feature == "voice_lobby":
+            await self._disable_voice_lobby_direct(interaction)
         elif feature == "albion_prices":
             await self._disable_albion_feature_direct(interaction, "prices")
         elif feature == "albion_builds":
@@ -473,6 +480,14 @@ class ContentReviewCog(commands.Cog):
             color=discord.Color.blue(),
         )
 
+    @staticmethod
+    def _build_voice_lobby_embed() -> discord.Embed:
+        return discord.Embed(
+            title="🎧 Voice Lobby Config",
+            description="Configure default temporary lobby options.",
+            color=discord.Color.blue(),
+        )
+
     async def _show_config_home(
         self, interaction: discord.Interaction, *, use_send: bool = False
     ) -> None:
@@ -541,6 +556,13 @@ class ContentReviewCog(commands.Cog):
         await interaction.response.edit_message(
             embed=self._build_albion_embed(),
             view=AlbionConfigView(self),
+            content=None,
+        )
+
+    async def _show_voice_lobby_menu(self, interaction: discord.Interaction) -> None:
+        await interaction.response.edit_message(
+            embed=self._build_voice_lobby_embed(),
+            view=VoiceLobbyConfigView(self),
             content=None,
         )
 
@@ -841,6 +863,379 @@ class ContentReviewCog(commands.Cog):
     async def _disable_time_impersonator_direct(self, interaction: discord.Interaction) -> None:
         """Disable time impersonator (direct command flow)."""
         await self._disable_time_impersonator(interaction, use_send=True)
+
+    async def _enable_voice_lobby(
+        self,
+        interaction: discord.Interaction,
+        *,
+        use_send: bool = False,
+    ) -> None:
+        """Enable voice lobby feature."""
+        if not interaction.guild:
+            return
+
+        from lifeguard.modules.voice_lobby import repo as voice_repo
+        from lifeguard.modules.voice_lobby.config import VoiceLobbyConfig
+
+        existing = voice_repo.get_config(self.firestore, interaction.guild.id)
+        if existing is None:
+            config = VoiceLobbyConfig(guild_id=interaction.guild.id, enabled=True)
+        else:
+            existing.enabled = True
+            config = existing
+
+        voice_repo.save_config(self.firestore, config)
+
+        content = (
+            f"✅ **{_FEATURE_VOICE_LOBBY} enabled!**\n\n"
+            "Next step: open `/config` → **Voice Lobby** to set entry channel, defaults, and role rules."
+        )
+        await self._respond(interaction, content, use_send=use_send)
+
+    async def _disable_voice_lobby(
+        self,
+        interaction: discord.Interaction,
+        *,
+        use_send: bool = False,
+    ) -> None:
+        """Disable voice lobby feature."""
+        if not interaction.guild:
+            return
+
+        from lifeguard.modules.voice_lobby import repo as voice_repo
+
+        config = voice_repo.get_config(self.firestore, interaction.guild.id)
+        if not config or not config.enabled:
+            await self._respond(
+                interaction,
+                f"{_FEATURE_VOICE_LOBBY} is not enabled.",
+                use_send=use_send,
+            )
+            return
+
+        config.enabled = False
+        voice_repo.save_config(self.firestore, config)
+
+        await self._respond(
+            interaction,
+            f"✅ **{_FEATURE_VOICE_LOBBY} disabled!**",
+            use_send=use_send,
+        )
+
+    async def _disable_voice_lobby_direct(self, interaction: discord.Interaction) -> None:
+        """Disable voice lobby (direct command flow)."""
+        await self._disable_voice_lobby(interaction, use_send=True)
+
+    # --- Voice Lobby Config UI Helpers ---
+
+    @staticmethod
+    def _format_voice_role_mentions(guild: discord.Guild, role_ids: list[int]) -> str:
+        if not role_ids:
+            return "Any role"
+
+        mentions: list[str] = []
+        for role_id in role_ids:
+            role = guild.get_role(role_id)
+            mentions.append(role.mention if role else f"Missing({role_id})")
+        return ", ".join(mentions)
+
+    async def _show_voice_lobby_status(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            return
+
+        from lifeguard.modules.voice_lobby import repo as voice_repo
+
+        config = voice_repo.get_config(self.firestore, interaction.guild.id)
+        if config is None:
+            await interaction.response.edit_message(
+                content=(
+                    "Voice lobby is not configured yet.\n"
+                    "Use **Entry Channel** and **Defaults** to configure it."
+                ),
+                embed=None,
+                view=VoiceLobbyConfigView(self),
+            )
+            return
+
+        if config.entry_voice_channel_id is None:
+            entry_label = "Not set"
+        else:
+            entry_channel = interaction.guild.get_channel(config.entry_voice_channel_id)
+            if isinstance(entry_channel, discord.VoiceChannel):
+                entry_label = entry_channel.mention
+            else:
+                entry_label = f"Missing({config.entry_voice_channel_id})"
+
+        if config.lobby_category_id is None:
+            category_label = "Same category as entry channel"
+        else:
+            category = interaction.guild.get_channel(config.lobby_category_id)
+            if isinstance(category, discord.CategoryChannel):
+                category_label = category.mention
+            else:
+                category_label = f"Missing({config.lobby_category_id})"
+
+        await interaction.response.edit_message(
+            content=(
+                f"Enabled: **{'Yes' if config.enabled else 'No'}**\n"
+                f"Entry channel: {entry_label}\n"
+                f"Lobby category: {category_label}\n"
+                f"Default user limit: **{config.default_user_limit}**\n"
+                f"Name template: `{config.name_template}`\n"
+                f"Create roles: {self._format_voice_role_mentions(interaction.guild, config.creator_role_ids)}\n"
+                f"Join roles: {self._format_voice_role_mentions(interaction.guild, config.join_role_ids)}"
+            ),
+            embed=None,
+            view=VoiceLobbyConfigView(self),
+        )
+
+    async def _set_voice_lobby_entry_channel(
+        self,
+        interaction: discord.Interaction,
+        entry_channel: discord.VoiceChannel,
+    ) -> None:
+        if not interaction.guild:
+            return
+
+        from lifeguard.modules.voice_lobby import repo as voice_repo
+
+        config = voice_repo.get_or_create_config(self.firestore, interaction.guild.id)
+        config.enabled = True
+        config.entry_voice_channel_id = entry_channel.id
+        voice_repo.save_config(self.firestore, config)
+
+        await interaction.response.edit_message(
+            content=f"✅ Entry voice channel set to {entry_channel.mention}.",
+            embed=None,
+            view=VoiceLobbyConfigView(self),
+        )
+
+    async def _set_voice_lobby_category(
+        self,
+        interaction: discord.Interaction,
+        category: discord.CategoryChannel | None,
+    ) -> None:
+        if not interaction.guild:
+            return
+
+        from lifeguard.modules.voice_lobby import repo as voice_repo
+
+        config = voice_repo.get_or_create_config(self.firestore, interaction.guild.id)
+        config.enabled = True
+        config.lobby_category_id = category.id if category else None
+        voice_repo.save_config(self.firestore, config)
+
+        if category is None:
+            content = "✅ Lobby category reset to **entry channel category**."
+        else:
+            content = f"✅ Lobby category set to {category.mention}."
+
+        await interaction.response.edit_message(
+            content=content,
+            embed=None,
+            view=VoiceLobbyConfigView(self),
+        )
+
+    async def _set_voice_lobby_defaults(
+        self,
+        interaction: discord.Interaction,
+        name_template: str,
+        default_user_limit: int,
+    ) -> None:
+        if not interaction.guild:
+            return
+
+        from lifeguard.modules.voice_lobby import repo as voice_repo
+
+        try:
+            parsed_user_limit = int(default_user_limit)
+        except (TypeError, ValueError):
+            await interaction.response.send_message(
+                "Default user limit must be a number between 0 and 99.",
+                ephemeral=True,
+            )
+            return
+
+        if parsed_user_limit < 0 or parsed_user_limit > 99:
+            await interaction.response.send_message(
+                "Default user limit must be a number between 0 and 99.",
+                ephemeral=True,
+            )
+            return
+
+        config = voice_repo.get_or_create_config(self.firestore, interaction.guild.id)
+        config.enabled = True
+        config.name_template = name_template.strip() or "Lobby - {owner}"
+        config.default_user_limit = parsed_user_limit
+        voice_repo.save_config(self.firestore, config)
+
+        await interaction.response.send_message(
+            (
+                "✅ Voice lobby defaults saved.\n"
+                f"Template: `{config.name_template}`\n"
+                f"Default user limit: **{config.default_user_limit}**"
+            ),
+            ephemeral=True,
+        )
+
+    async def _add_voice_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+        *,
+        field_name: str,
+        label: str,
+        return_view: discord.ui.View,
+    ) -> None:
+        if not interaction.guild:
+            return
+
+        from lifeguard.modules.voice_lobby import repo as voice_repo
+
+        config = voice_repo.get_or_create_config(self.firestore, interaction.guild.id)
+        role_ids = getattr(config, field_name)
+        if role.id in role_ids:
+            await interaction.response.edit_message(
+                content=f"{role.mention} is already in {label} roles.",
+                embed=None,
+                view=return_view,
+            )
+            return
+
+        role_ids.append(role.id)
+        setattr(config, field_name, role_ids)
+        voice_repo.save_config(self.firestore, config)
+
+        await interaction.response.edit_message(
+            content=f"✅ Added {role.mention} to {label} roles.",
+            embed=None,
+            view=return_view,
+        )
+
+    async def _remove_voice_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+        *,
+        field_name: str,
+        label: str,
+        return_view: discord.ui.View,
+    ) -> None:
+        if not interaction.guild:
+            return
+
+        from lifeguard.modules.voice_lobby import repo as voice_repo
+
+        config = voice_repo.get_or_create_config(self.firestore, interaction.guild.id)
+        role_ids = getattr(config, field_name)
+        if role.id not in role_ids:
+            await interaction.response.edit_message(
+                content=f"{role.mention} is not in {label} roles.",
+                embed=None,
+                view=return_view,
+            )
+            return
+
+        role_ids.remove(role.id)
+        setattr(config, field_name, role_ids)
+        voice_repo.save_config(self.firestore, config)
+
+        await interaction.response.edit_message(
+            content=f"✅ Removed {role.mention} from {label} roles.",
+            embed=None,
+            view=return_view,
+        )
+
+    async def _clear_voice_roles(
+        self,
+        interaction: discord.Interaction,
+        *,
+        field_name: str,
+        label: str,
+        return_view: discord.ui.View,
+    ) -> None:
+        if not interaction.guild:
+            return
+
+        from lifeguard.modules.voice_lobby import repo as voice_repo
+
+        config = voice_repo.get_or_create_config(self.firestore, interaction.guild.id)
+        setattr(config, field_name, [])
+        voice_repo.save_config(self.firestore, config)
+
+        await interaction.response.edit_message(
+            content=f"✅ Cleared {label} role restrictions.",
+            embed=None,
+            view=return_view,
+        )
+
+    async def _add_voice_lobby_creator_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+    ) -> None:
+        await self._add_voice_role(
+            interaction,
+            role,
+            field_name="creator_role_ids",
+            label="creator",
+            return_view=VoiceLobbyConfigView(self),
+        )
+
+    async def _remove_voice_lobby_creator_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+    ) -> None:
+        await self._remove_voice_role(
+            interaction,
+            role,
+            field_name="creator_role_ids",
+            label="creator",
+            return_view=VoiceLobbyConfigView(self),
+        )
+
+    async def _clear_voice_lobby_creator_roles(self, interaction: discord.Interaction) -> None:
+        await self._clear_voice_roles(
+            interaction,
+            field_name="creator_role_ids",
+            label="creator",
+            return_view=VoiceLobbyConfigView(self),
+        )
+
+    async def _add_voice_lobby_join_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+    ) -> None:
+        await self._add_voice_role(
+            interaction,
+            role,
+            field_name="join_role_ids",
+            label="join",
+            return_view=VoiceLobbyConfigView(self),
+        )
+
+    async def _remove_voice_lobby_join_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+    ) -> None:
+        await self._remove_voice_role(
+            interaction,
+            role,
+            field_name="join_role_ids",
+            label="join",
+            return_view=VoiceLobbyConfigView(self),
+        )
+
+    async def _clear_voice_lobby_join_roles(self, interaction: discord.Interaction) -> None:
+        await self._clear_voice_roles(
+            interaction,
+            field_name="join_role_ids",
+            label="join",
+            return_view=VoiceLobbyConfigView(self),
+        )
 
     async def _disable_albion_feature_direct(
         self, interaction: discord.Interaction, feature: str

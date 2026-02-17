@@ -36,6 +36,7 @@ async def _sync_commands(bot: commands.Bot, config: Config) -> None:
 def create_bot(config: Config) -> commands.Bot:
     intents = discord.Intents.default()
     intents.message_content = True
+    intents.voice_states = True
 
     bot = commands.Bot(command_prefix=config.command_prefix, intents=intents)
     bot._commands_synced = False  # type: ignore[attr-defined]
@@ -76,6 +77,7 @@ def create_bot(config: Config) -> commands.Bot:
         # await bot.add_cog(_load_albion_cog(bot, config, session))
         await bot.add_cog(_load_content_review_cog(bot))
         await bot.add_cog(_load_time_impersonator_cog(bot))
+        await bot.add_cog(_load_voice_lobby_cog(bot))
 
     @bot.event
     async def close() -> None:
@@ -118,3 +120,9 @@ def _load_time_impersonator_cog(bot: commands.Bot) -> commands.Cog:
     from lifeguard.modules.time_impersonator.cog import TimeImpersonatorCog
 
     return TimeImpersonatorCog(bot)
+
+
+def _load_voice_lobby_cog(bot: commands.Bot) -> commands.Cog:
+    from lifeguard.modules.voice_lobby.cog import VoiceLobbyCog
+
+    return VoiceLobbyCog(bot)
