@@ -5,6 +5,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from lifeguard.config import Config
@@ -15,8 +16,30 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 
+def _iter_command_paths(
+    command: app_commands.Command | app_commands.Group,
+) -> list[str]:
+    """Return executable command paths for a command or command group."""
+    if isinstance(command, app_commands.Group):
+        paths: list[str] = []
+        for child in command.commands:
+            paths.extend(_iter_command_paths(child))
+        if paths:
+            return paths
+        return [command.qualified_name]
+    return [command.qualified_name]
+
+
+def _get_registered_command_paths(bot: commands.Bot) -> list[str]:
+    """Collect all executable app command paths registered on the command tree."""
+    paths: list[str] = []
+    for command in bot.tree.get_commands():
+        paths.extend(_iter_command_paths(command))
+    return sorted(paths)
+
+
 async def _sync_commands(bot: commands.Bot, config: Config) -> None:
-    """Sync app commands to the target guild or globally."""
+    """Sync app commands globally and optionally to a target guild."""
     target_guild_id = config.active_guild_id
 
     if target_guild_id is not None:
@@ -25,13 +48,15 @@ async def _sync_commands(bot: commands.Bot, config: Config) -> None:
         synced = await bot.tree.sync(guild=guild)
         LOGGER.info("Synced %d app commands to guild %s", len(synced), target_guild_id)
 
-        # Clear global commands to prevent duplicates
-        bot.tree.clear_commands(guild=None)
-        await bot.tree.sync()
-        LOGGER.info("Cleared global commands")
-    else:
-        synced = await bot.tree.sync()
-        LOGGER.info("Synced %d global app commands", len(synced))
+    synced = await bot.tree.sync()
+    LOGGER.info("Synced %d global app commands", len(synced))
+
+    command_paths = _get_registered_command_paths(bot)
+    LOGGER.info(
+        "Registered app command paths (%d): %s",
+        len(command_paths),
+        ", ".join(command_paths),
+    )
 
 
 def create_bot(config: Config) -> commands.Bot:
