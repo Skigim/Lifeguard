@@ -2,18 +2,53 @@ from __future__ import annotations
 
 import inspect
 import logging
+import subprocess
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+from lifeguard import __version__
 from lifeguard.config import Config
 
 if TYPE_CHECKING:
     import aiohttp
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _get_repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _get_git_commit_short() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=_get_repo_root(),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+
+def _is_git_dirty() -> bool | None:
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=_get_repo_root(),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return bool(result.stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 
 def _iter_command_paths(
@@ -39,7 +74,7 @@ def _get_registered_command_paths(bot: commands.Bot) -> list[str]:
 
 
 async def _sync_commands(bot: commands.Bot, config: Config) -> None:
-    """Sync app commands globally and optionally to a target guild."""
+    """Sync app commands, avoiding global+guild duplicates in target guild mode."""
     target_guild_id = config.active_guild_id
 
     if target_guild_id is not None:
@@ -48,8 +83,12 @@ async def _sync_commands(bot: commands.Bot, config: Config) -> None:
         synced = await bot.tree.sync(guild=guild)
         LOGGER.info("Synced %d app commands to guild %s", len(synced), target_guild_id)
 
-    synced = await bot.tree.sync()
-    LOGGER.info("Synced %d global app commands", len(synced))
+        bot.tree.clear_commands(guild=None)
+        cleared = await bot.tree.sync()
+        LOGGER.info("Cleared global app commands (remaining: %d)", len(cleared))
+    else:
+        synced = await bot.tree.sync()
+        LOGGER.info("Synced %d global app commands", len(synced))
 
     command_paths = _get_registered_command_paths(bot)
     LOGGER.info(
@@ -70,11 +109,24 @@ def create_bot(config: Config) -> commands.Bot:
     @bot.event
     async def on_ready() -> None:
         env_label = "TEST" if config.is_test else "PRODUCTION"
+        git_commit = _get_git_commit_short()
+        git_dirty = _is_git_dirty()
+        dirty_label = (
+            "unknown" if git_dirty is None else ("dirty" if git_dirty else "clean")
+        )
+
         LOGGER.info(
             "[%s] Logged in as %s (%s)",
             env_label,
             bot.user,
             bot.user.id if bot.user else "?",
+        )
+        LOGGER.info(
+            "[%s] Build fingerprint: version=%s git=%s workspace=%s",
+            env_label,
+            __version__,
+            git_commit,
+            dirty_label,
         )
 
         if bot._commands_synced:  # type: ignore[attr-defined]
