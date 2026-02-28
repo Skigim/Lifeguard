@@ -1153,16 +1153,17 @@ class ContentReviewCog(commands.Cog):
         # Add custom_id with submission ID for persistence
         view.children[0].custom_id = f"content_review:start_review:{submission_id}"
 
-        if reviewer_roles:
-            reviewer_mentions = " ".join(role.mention for role in reviewer_roles)
-            await ticket_channel.send(
-                f"{reviewer_mentions} New content review ticket is ready.",
-                allowed_mentions=discord.AllowedMentions(
-                    roles=True,
-                    users=False,
-                    everyone=False,
-                ),
-            )
+        reviewer_mentions = " ".join(role.mention for role in reviewer_roles) if reviewer_roles else ""
+        ping_content = f"{reviewer_mentions} {interaction.user.mention} New content review ticket is ready.".strip()
+
+        await ticket_channel.send(
+            ping_content,
+            allowed_mentions=discord.AllowedMentions(
+                roles=True,
+                users=True,
+                everyone=False,
+            ),
+        )
 
         # Send welcome message first
         welcome_embed = discord.Embed(
