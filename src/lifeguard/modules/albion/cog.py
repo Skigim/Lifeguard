@@ -27,6 +27,7 @@ LOGGER = logging.getLogger(__name__)
 
 def require_albion_prices():
     """Check that Albion price lookup is enabled for this guild."""
+
     async def predicate(interaction: discord.Interaction) -> bool:
         if not interaction.guild:
             return False
@@ -37,11 +38,13 @@ def require_albion_prices():
         if not features or not features.albion_prices_enabled:
             raise FeatureDisabledError("Albion Price Lookup")
         return True
+
     return app_commands.check(predicate)
 
 
 def require_albion_builds():
     """Check that Albion builds is enabled for this guild."""
+
     async def predicate(interaction: discord.Interaction) -> bool:
         if not interaction.guild:
             return False
@@ -52,6 +55,7 @@ def require_albion_builds():
         if not features or not features.albion_builds_enabled:
             raise FeatureDisabledError("Albion Builds")
         return True
+
     return app_commands.check(predicate)
 
 

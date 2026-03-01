@@ -17,7 +17,9 @@ def _guild_doc_id(guild_id: int) -> str:
 
 def get_config(firestore: FirestoreClient, guild_id: int) -> VoiceLobbyConfig | None:
     """Get voice lobby configuration for a guild."""
-    doc = firestore.collection(CONFIGS_COLLECTION).document(_guild_doc_id(guild_id)).get()
+    doc = (
+        firestore.collection(CONFIGS_COLLECTION).document(_guild_doc_id(guild_id)).get()
+    )
     if not doc.exists:
         return None
     return VoiceLobbyConfig.from_firestore(doc.to_dict())
@@ -33,6 +35,6 @@ def get_or_create_config(firestore: FirestoreClient, guild_id: int) -> VoiceLobb
 
 def save_config(firestore: FirestoreClient, config: VoiceLobbyConfig) -> None:
     """Save voice lobby configuration."""
-    firestore.collection(CONFIGS_COLLECTION).document(_guild_doc_id(config.guild_id)).set(
-        config.to_firestore(), merge=True
-    )
+    firestore.collection(CONFIGS_COLLECTION).document(
+        _guild_doc_id(config.guild_id)
+    ).set(config.to_firestore(), merge=True)

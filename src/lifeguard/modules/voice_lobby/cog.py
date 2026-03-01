@@ -51,7 +51,9 @@ class VoiceLobbyCog(commands.Cog):
         member_role_ids = {role.id for role in member.roles}
         return bool(member_role_ids & set(role_ids))
 
-    def _can_create_lobby(self, member: discord.Member, config: VoiceLobbyConfig) -> bool:
+    def _can_create_lobby(
+        self, member: discord.Member, config: VoiceLobbyConfig
+    ) -> bool:
         if not config.creator_role_ids:
             return True
         return self._member_has_any_role(member, config.creator_role_ids)
@@ -80,7 +82,9 @@ class VoiceLobbyCog(commands.Cog):
 
         return self._sanitize_channel_name(name)
 
-    def _find_session_by_owner(self, guild_id: int, owner_id: int) -> _LobbySession | None:
+    def _find_session_by_owner(
+        self, guild_id: int, owner_id: int
+    ) -> _LobbySession | None:
         for session in self._sessions_by_voice_id.values():
             if session.guild_id == guild_id and session.owner_id == owner_id:
                 return session
@@ -159,7 +163,9 @@ class VoiceLobbyCog(commands.Cog):
         voice_channel = await member.guild.create_voice_channel(
             name=lobby_name,
             category=category,
-            overwrites=self._build_voice_channel_overwrites(member.guild, member, join_roles),
+            overwrites=self._build_voice_channel_overwrites(
+                member.guild, member, join_roles
+            ),
             user_limit=max(0, min(config.default_user_limit, 99)),
             reason=f"Temporary lobby created for {member}",
         )
@@ -170,7 +176,9 @@ class VoiceLobbyCog(commands.Cog):
             voice_channel_id=voice_channel.id,
         )
 
-        await member.move_to(voice_channel, reason="Moved into newly-created temporary lobby")
+        await member.move_to(
+            voice_channel, reason="Moved into newly-created temporary lobby"
+        )
 
         from lifeguard.modules.voice_lobby.views.config_ui import LobbyConfigView
 
@@ -200,11 +208,15 @@ class VoiceLobbyCog(commands.Cog):
             try:
                 await voice_channel.delete(reason="Temporary lobby cleaned up")
             except (discord.Forbidden, discord.HTTPException):
-                LOGGER.exception("Failed deleting lobby voice channel %s", voice_channel.id)
+                LOGGER.exception(
+                    "Failed deleting lobby voice channel %s", voice_channel.id
+                )
 
         self._sessions_by_voice_id.pop(voice_channel_id, None)
 
-    async def _get_lobby_voice_channel(self, guild: discord.Guild, voice_channel_id: int) -> discord.VoiceChannel | None:
+    async def _get_lobby_voice_channel(
+        self, guild: discord.Guild, voice_channel_id: int
+    ) -> discord.VoiceChannel | None:
         channel = guild.get_channel(voice_channel_id)
         if isinstance(channel, discord.VoiceChannel):
             return channel
@@ -234,14 +246,22 @@ class VoiceLobbyCog(commands.Cog):
             )
             return
 
-        channel = await self._get_lobby_voice_channel(interaction.guild, voice_channel_id)
+        channel = await self._get_lobby_voice_channel(
+            interaction.guild, voice_channel_id
+        )
         if channel is None:
-            await interaction.response.send_message("Lobby channel no longer exists.", ephemeral=True)
+            await interaction.response.send_message(
+                "Lobby channel no longer exists.", ephemeral=True
+            )
             return
 
         safe_name = self._sanitize_channel_name(requested_name)
-        await channel.edit(name=safe_name, reason=f"Lobby renamed by {interaction.user}")
-        await interaction.response.send_message(f"Lobby renamed to **{safe_name}**.", ephemeral=True)
+        await channel.edit(
+            name=safe_name, reason=f"Lobby renamed by {interaction.user}"
+        )
+        await interaction.response.send_message(
+            f"Lobby renamed to **{safe_name}**.", ephemeral=True
+        )
 
     async def update_lobby_user_limit(
         self,
@@ -268,21 +288,31 @@ class VoiceLobbyCog(commands.Cog):
             )
             return
 
-        channel = await self._get_lobby_voice_channel(interaction.guild, voice_channel_id)
+        channel = await self._get_lobby_voice_channel(
+            interaction.guild, voice_channel_id
+        )
         if channel is None:
-            await interaction.response.send_message("Lobby channel no longer exists.", ephemeral=True)
+            await interaction.response.send_message(
+                "Lobby channel no longer exists.", ephemeral=True
+            )
             return
 
-        await channel.edit(user_limit=user_limit, reason=f"Lobby limit updated by {interaction.user}")
+        await channel.edit(
+            user_limit=user_limit, reason=f"Lobby limit updated by {interaction.user}"
+        )
         if user_limit == 0:
-            await interaction.response.send_message("Lobby user limit removed.", ephemeral=True)
+            await interaction.response.send_message(
+                "Lobby user limit removed.", ephemeral=True
+            )
         else:
             await interaction.response.send_message(
                 f"Lobby user limit set to **{user_limit}**.",
                 ephemeral=True,
             )
 
-    async def close_lobby(self, interaction: discord.Interaction, voice_channel_id: int) -> None:
+    async def close_lobby(
+        self, interaction: discord.Interaction, voice_channel_id: int
+    ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("Server only.", ephemeral=True)
             return
@@ -298,7 +328,9 @@ class VoiceLobbyCog(commands.Cog):
         await interaction.response.send_message("Closing lobby…", ephemeral=True)
         await self._force_cleanup_lobby(interaction.guild, voice_channel_id)
 
-    async def _force_cleanup_lobby(self, guild: discord.Guild, voice_channel_id: int) -> None:
+    async def _force_cleanup_lobby(
+        self, guild: discord.Guild, voice_channel_id: int
+    ) -> None:
         session = self._sessions_by_voice_id.get(voice_channel_id)
         if session is None:
             return
@@ -308,7 +340,9 @@ class VoiceLobbyCog(commands.Cog):
             try:
                 await voice_channel.delete(reason="Temporary lobby closed by owner")
             except (discord.Forbidden, discord.HTTPException):
-                LOGGER.exception("Failed deleting lobby voice channel %s", voice_channel.id)
+                LOGGER.exception(
+                    "Failed deleting lobby voice channel %s", voice_channel.id
+                )
 
         self._sessions_by_voice_id.pop(voice_channel_id, None)
 
@@ -322,7 +356,10 @@ class VoiceLobbyCog(commands.Cog):
         if member.bot:
             return
 
-        if before.channel is not None and before.channel.id in self._sessions_by_voice_id:
+        if (
+            before.channel is not None
+            and before.channel.id in self._sessions_by_voice_id
+        ):
             if after.channel is None or after.channel.id != before.channel.id:
                 await self._cleanup_lobby_if_empty(before.channel.id)
 
@@ -330,7 +367,11 @@ class VoiceLobbyCog(commands.Cog):
             return
 
         config = repo.get_config(self.firestore, member.guild.id)
-        if config is None or not config.enabled or config.entry_voice_channel_id is None:
+        if (
+            config is None
+            or not config.enabled
+            or config.entry_voice_channel_id is None
+        ):
             return
 
         managed_session = self._sessions_by_voice_id.get(after.channel.id)
@@ -362,7 +403,9 @@ class VoiceLobbyCog(commands.Cog):
         if active_lobby is not None:
             channel = member.guild.get_channel(active_lobby.voice_channel_id)
             if isinstance(channel, discord.VoiceChannel):
-                await member.move_to(channel, reason="Moved back to existing temporary lobby")
+                await member.move_to(
+                    channel, reason="Moved back to existing temporary lobby"
+                )
                 return
 
             self._sessions_by_voice_id.pop(active_lobby.voice_channel_id, None)
@@ -373,7 +416,10 @@ class VoiceLobbyCog(commands.Cog):
         try:
             await self._create_lobby_for_member(member, after.channel)
         except (discord.Forbidden, discord.HTTPException):
-            LOGGER.exception("Failed to create temporary lobby for member %s", member.id)
+            LOGGER.exception(
+                "Failed to create temporary lobby for member %s", member.id
+            )
+
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(VoiceLobbyCog(bot))

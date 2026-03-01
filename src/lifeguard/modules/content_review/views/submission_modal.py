@@ -8,7 +8,10 @@ from typing import TYPE_CHECKING, Callable, Coroutine, Any
 import discord
 
 if TYPE_CHECKING:
-    from lifeguard.modules.content_review.config import ContentReviewConfig, SubmissionField
+    from lifeguard.modules.content_review.config import (
+        ContentReviewConfig,
+        SubmissionField,
+    )
 
 
 class SubmissionModal(discord.ui.Modal):
@@ -17,7 +20,9 @@ class SubmissionModal(discord.ui.Modal):
     def __init__(
         self,
         config: ContentReviewConfig,
-        on_submit_callback: Callable[[discord.Interaction, dict[str, str]], Coroutine[Any, Any, None]],
+        on_submit_callback: Callable[
+            [discord.Interaction, dict[str, str]], Coroutine[Any, Any, None]
+        ],
     ) -> None:
         super().__init__(title=config.modal_title)
         self.config = config

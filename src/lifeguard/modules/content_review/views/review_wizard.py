@@ -12,7 +12,10 @@ from lifeguard.modules.content_review.models import ReviewNote
 from lifeguard.modules.content_review.views.note_modal import NoteModal
 
 if TYPE_CHECKING:
-    from lifeguard.modules.content_review.config import ContentReviewConfig, ReviewCategory
+    from lifeguard.modules.content_review.config import (
+        ContentReviewConfig,
+        ReviewCategory,
+    )
     from lifeguard.modules.content_review.models import Submission
 
 
@@ -192,18 +195,23 @@ class ReviewWizardView(discord.ui.View):
         # Show current score if set
         current_score = self.draft.scores.get(category.id)
         if current_score is not None:
-            embed.add_field(name="Current Score", value=f"**{current_score}**", inline=True)
+            embed.add_field(
+                name="Current Score", value=f"**{current_score}**", inline=True
+            )
 
         # Show note preview if exists
         note = self.draft.notes.get(category.id)
         if note:
-            preview = note.feedback[:100] + "..." if len(note.feedback) > 100 else note.feedback
+            preview = (
+                note.feedback[:100] + "..."
+                if len(note.feedback) > 100
+                else note.feedback
+            )
             embed.add_field(name="Note", value=preview, inline=False)
 
         # Progress indicator
         progress = " ".join(
-            "✅" if cat.id in self.draft.scores else "⬜"
-            for cat in self.categories
+            "✅" if cat.id in self.draft.scores else "⬜" for cat in self.categories
         )
         embed.set_footer(text=f"Progress: {progress}")
 
@@ -223,7 +231,11 @@ class ReviewWizardView(discord.ui.View):
 
             value = f"**Score: {score}**"
             if note:
-                preview = note.feedback[:80] + "..." if len(note.feedback) > 80 else note.feedback
+                preview = (
+                    note.feedback[:80] + "..."
+                    if len(note.feedback) > 80
+                    else note.feedback
+                )
                 value += f"\n📝 {preview}"
 
             embed.add_field(name=category.name, value=value, inline=False)

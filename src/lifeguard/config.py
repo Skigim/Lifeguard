@@ -91,7 +91,9 @@ def load_config() -> Config:
     prefix = os.getenv("COMMAND_PREFIX", "!")
     log_level = os.getenv("LOG_LEVEL", "INFO")
 
-    albion_data_base = os.getenv("ALBION_DATA_BASE", "https://west.albion-online-data.com")
+    albion_data_base = os.getenv(
+        "ALBION_DATA_BASE", "https://west.albion-online-data.com"
+    )
     albion_gameinfo_base = os.getenv(
         "ALBION_GAMEINFO_BASE", "https://gameinfo.albiononline.com/api/gameinfo"
     )

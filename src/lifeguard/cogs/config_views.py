@@ -100,13 +100,17 @@ class GeneralConfigView(discord.ui.View):
         super().__init__(timeout=120)
         self.cog = cog
 
-    @discord.ui.button(label="View Admin Roles", style=discord.ButtonStyle.secondary, emoji="📋", row=0)
+    @discord.ui.button(
+        label="View Admin Roles", style=discord.ButtonStyle.secondary, emoji="📋", row=0
+    )
     async def view_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._show_bot_admin_roles(interaction)
 
-    @discord.ui.button(label="Add Admin Role", style=discord.ButtonStyle.success, emoji="➕", row=0)
+    @discord.ui.button(
+        label="Add Admin Role", style=discord.ButtonStyle.success, emoji="➕", row=0
+    )
     async def add_role_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -115,19 +119,28 @@ class GeneralConfigView(discord.ui.View):
             content="Select a role to add as a bot admin role:", embed=None, view=view
         )
 
-    @discord.ui.button(label="Remove Admin Role", style=discord.ButtonStyle.secondary, emoji="➖", row=0)
+    @discord.ui.button(
+        label="Remove Admin Role",
+        style=discord.ButtonStyle.secondary,
+        emoji="➖",
+        row=0,
+    )
     async def remove_role_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._show_remove_bot_admin_role_view(interaction)
 
-    @discord.ui.button(label="Clear Admin Roles", style=discord.ButtonStyle.danger, emoji="🗑️", row=1)
+    @discord.ui.button(
+        label="Clear Admin Roles", style=discord.ButtonStyle.danger, emoji="🗑️", row=1
+    )
     async def clear_roles_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._clear_bot_admin_roles(interaction)
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -151,7 +164,9 @@ class AddBotAdminRoleView(discord.ui.View):
         role = select.values[0]
         await self.cog._add_bot_admin_role(interaction, role)
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -176,7 +191,9 @@ class RemoveBotAdminRoleView(discord.ui.View):
         role = select.values[0]
         await self.cog._remove_bot_admin_role(interaction, role)
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -209,37 +226,49 @@ class AlbionConfigView(discord.ui.View):
         super().__init__(timeout=120)
         self.cog = cog
 
-    @discord.ui.button(label="Status", style=discord.ButtonStyle.secondary, emoji="📋", row=0)
+    @discord.ui.button(
+        label="Status", style=discord.ButtonStyle.secondary, emoji="📋", row=0
+    )
     async def view_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._show_albion_status(interaction)
 
-    @discord.ui.button(label="Enable Prices", style=discord.ButtonStyle.success, emoji="💰", row=0)
+    @discord.ui.button(
+        label="Enable Prices", style=discord.ButtonStyle.success, emoji="💰", row=0
+    )
     async def enable_prices_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._enable_albion_feature(interaction, "prices")
 
-    @discord.ui.button(label="Disable Prices", style=discord.ButtonStyle.danger, emoji="❌", row=0)
+    @discord.ui.button(
+        label="Disable Prices", style=discord.ButtonStyle.danger, emoji="❌", row=0
+    )
     async def disable_prices_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._disable_albion_feature(interaction, "prices")
 
-    @discord.ui.button(label="Enable Builds", style=discord.ButtonStyle.success, emoji="⚔️", row=0)
+    @discord.ui.button(
+        label="Enable Builds", style=discord.ButtonStyle.success, emoji="⚔️", row=0
+    )
     async def enable_builds_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._enable_albion_feature(interaction, "builds")
 
-    @discord.ui.button(label="Disable Builds", style=discord.ButtonStyle.danger, emoji="❌", row=0)
+    @discord.ui.button(
+        label="Disable Builds", style=discord.ButtonStyle.danger, emoji="❌", row=0
+    )
     async def disable_builds_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._disable_albion_feature(interaction, "builds")
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -272,13 +301,17 @@ class VoiceLobbyConfigView(discord.ui.View):
         super().__init__(timeout=120)
         self.cog = cog
 
-    @discord.ui.button(label="Status", style=discord.ButtonStyle.secondary, emoji="📋", row=0)
+    @discord.ui.button(
+        label="Status", style=discord.ButtonStyle.secondary, emoji="📋", row=0
+    )
     async def status_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._show_voice_lobby_status(interaction)
 
-    @discord.ui.button(label="Entry Channel", style=discord.ButtonStyle.secondary, emoji="🎙️", row=0)
+    @discord.ui.button(
+        label="Entry Channel", style=discord.ButtonStyle.secondary, emoji="🎙️", row=0
+    )
     async def entry_channel_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -288,7 +321,9 @@ class VoiceLobbyConfigView(discord.ui.View):
             view=AssignVoiceEntryChannelView(self.cog),
         )
 
-    @discord.ui.button(label="Lobby Category", style=discord.ButtonStyle.secondary, emoji="🗂️", row=0)
+    @discord.ui.button(
+        label="Lobby Category", style=discord.ButtonStyle.secondary, emoji="🗂️", row=0
+    )
     async def lobby_category_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -298,13 +333,17 @@ class VoiceLobbyConfigView(discord.ui.View):
             view=AssignVoiceLobbyCategoryView(self.cog),
         )
 
-    @discord.ui.button(label="Defaults", style=discord.ButtonStyle.primary, emoji="⚙️", row=0)
+    @discord.ui.button(
+        label="Defaults", style=discord.ButtonStyle.primary, emoji="⚙️", row=0
+    )
     async def defaults_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await interaction.response.send_modal(VoiceLobbyDefaultsModal(self.cog))
 
-    @discord.ui.button(label="Create Roles", style=discord.ButtonStyle.secondary, emoji="➕", row=1)
+    @discord.ui.button(
+        label="Create Roles", style=discord.ButtonStyle.secondary, emoji="➕", row=1
+    )
     async def create_roles_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -314,7 +353,9 @@ class VoiceLobbyConfigView(discord.ui.View):
             view=VoiceLobbyCreateRolesView(self.cog),
         )
 
-    @discord.ui.button(label="Join Roles", style=discord.ButtonStyle.secondary, emoji="👥", row=1)
+    @discord.ui.button(
+        label="Join Roles", style=discord.ButtonStyle.secondary, emoji="👥", row=1
+    )
     async def join_roles_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -324,13 +365,17 @@ class VoiceLobbyConfigView(discord.ui.View):
             view=VoiceLobbyJoinRolesView(self.cog),
         )
 
-    @discord.ui.button(label="Disable", style=discord.ButtonStyle.danger, emoji="❌", row=1)
+    @discord.ui.button(
+        label="Disable", style=discord.ButtonStyle.danger, emoji="❌", row=1
+    )
     async def disable_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._disable_voice_lobby(interaction)
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -355,18 +400,24 @@ class AssignVoiceEntryChannelView(discord.ui.View):
         self, interaction: discord.Interaction, select: discord.ui.ChannelSelect
     ) -> None:
         if not interaction.guild:
-            await interaction.response.send_message("This must be used in a guild.", ephemeral=True)
+            await interaction.response.send_message(
+                "This must be used in a guild.", ephemeral=True
+            )
             return
 
         selected_channel = select.values[0]
         channel = interaction.guild.get_channel(selected_channel.id)
         if not isinstance(channel, discord.VoiceChannel):
-            await interaction.response.send_message("Please select a voice channel.", ephemeral=True)
+            await interaction.response.send_message(
+                "Please select a voice channel.", ephemeral=True
+            )
             return
 
         await self.cog._set_voice_lobby_entry_channel(interaction, channel)
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -391,24 +442,35 @@ class AssignVoiceLobbyCategoryView(discord.ui.View):
         self, interaction: discord.Interaction, select: discord.ui.ChannelSelect
     ) -> None:
         if not interaction.guild:
-            await interaction.response.send_message("This must be used in a guild.", ephemeral=True)
+            await interaction.response.send_message(
+                "This must be used in a guild.", ephemeral=True
+            )
             return
 
         selected_channel = select.values[0]
         category = interaction.guild.get_channel(selected_channel.id)
         if not isinstance(category, discord.CategoryChannel):
-            await interaction.response.send_message("Please select a valid category.", ephemeral=True)
+            await interaction.response.send_message(
+                "Please select a valid category.", ephemeral=True
+            )
             return
 
         await self.cog._set_voice_lobby_category(interaction, category)
 
-    @discord.ui.button(label="Use Entry Category", style=discord.ButtonStyle.secondary, emoji="📍", row=1)
+    @discord.ui.button(
+        label="Use Entry Category",
+        style=discord.ButtonStyle.secondary,
+        emoji="📍",
+        row=1,
+    )
     async def use_entry_category_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._set_voice_lobby_category(interaction, None)
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -463,7 +525,9 @@ class VoiceLobbyCreateRolesView(discord.ui.View):
         super().__init__(timeout=60)
         self.cog = cog
 
-    @discord.ui.button(label="Add Role", style=discord.ButtonStyle.success, emoji="➕", row=0)
+    @discord.ui.button(
+        label="Add Role", style=discord.ButtonStyle.success, emoji="➕", row=0
+    )
     async def add_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -473,7 +537,9 @@ class VoiceLobbyCreateRolesView(discord.ui.View):
             view=AddVoiceCreateRoleView(self.cog),
         )
 
-    @discord.ui.button(label="Remove Role", style=discord.ButtonStyle.secondary, emoji="➖", row=0)
+    @discord.ui.button(
+        label="Remove Role", style=discord.ButtonStyle.secondary, emoji="➖", row=0
+    )
     async def remove_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -483,13 +549,17 @@ class VoiceLobbyCreateRolesView(discord.ui.View):
             view=RemoveVoiceCreateRoleView(self.cog),
         )
 
-    @discord.ui.button(label="Clear Roles", style=discord.ButtonStyle.danger, emoji="🗑️", row=0)
+    @discord.ui.button(
+        label="Clear Roles", style=discord.ButtonStyle.danger, emoji="🗑️", row=0
+    )
     async def clear_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._clear_voice_lobby_creator_roles(interaction)
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -503,7 +573,9 @@ class VoiceLobbyJoinRolesView(discord.ui.View):
         super().__init__(timeout=60)
         self.cog = cog
 
-    @discord.ui.button(label="Add Role", style=discord.ButtonStyle.success, emoji="➕", row=0)
+    @discord.ui.button(
+        label="Add Role", style=discord.ButtonStyle.success, emoji="➕", row=0
+    )
     async def add_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -513,7 +585,9 @@ class VoiceLobbyJoinRolesView(discord.ui.View):
             view=AddVoiceJoinRoleView(self.cog),
         )
 
-    @discord.ui.button(label="Remove Role", style=discord.ButtonStyle.secondary, emoji="➖", row=0)
+    @discord.ui.button(
+        label="Remove Role", style=discord.ButtonStyle.secondary, emoji="➖", row=0
+    )
     async def remove_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -523,13 +597,17 @@ class VoiceLobbyJoinRolesView(discord.ui.View):
             view=RemoveVoiceJoinRoleView(self.cog),
         )
 
-    @discord.ui.button(label="Clear Roles", style=discord.ButtonStyle.danger, emoji="🗑️", row=0)
+    @discord.ui.button(
+        label="Clear Roles", style=discord.ButtonStyle.danger, emoji="🗑️", row=0
+    )
     async def clear_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._clear_voice_lobby_join_roles(interaction)
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -547,7 +625,9 @@ class AddVoiceCreateRoleView(discord.ui.View):
     ) -> None:
         await self.cog._add_voice_lobby_creator_role(interaction, select.values[0])
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -563,13 +643,17 @@ class RemoveVoiceCreateRoleView(discord.ui.View):
         super().__init__(timeout=60)
         self.cog = cog
 
-    @discord.ui.select(cls=discord.ui.RoleSelect, placeholder="Select a role to remove...")
+    @discord.ui.select(
+        cls=discord.ui.RoleSelect, placeholder="Select a role to remove..."
+    )
     async def role_select(
         self, interaction: discord.Interaction, select: discord.ui.RoleSelect
     ) -> None:
         await self.cog._remove_voice_lobby_creator_role(interaction, select.values[0])
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -591,7 +675,9 @@ class AddVoiceJoinRoleView(discord.ui.View):
     ) -> None:
         await self.cog._add_voice_lobby_join_role(interaction, select.values[0])
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -607,13 +693,17 @@ class RemoveVoiceJoinRoleView(discord.ui.View):
         super().__init__(timeout=60)
         self.cog = cog
 
-    @discord.ui.select(cls=discord.ui.RoleSelect, placeholder="Select a role to remove...")
+    @discord.ui.select(
+        cls=discord.ui.RoleSelect, placeholder="Select a role to remove..."
+    )
     async def role_select(
         self, interaction: discord.Interaction, select: discord.ui.RoleSelect
     ) -> None:
         await self.cog._remove_voice_lobby_join_role(interaction, select.values[0])
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -636,25 +726,33 @@ class TimeImpersonatorConfigView(discord.ui.View):
         super().__init__(timeout=120)
         self.cog = cog
 
-    @discord.ui.button(label="Status", style=discord.ButtonStyle.secondary, emoji="📋", row=0)
+    @discord.ui.button(
+        label="Status", style=discord.ButtonStyle.secondary, emoji="📋", row=0
+    )
     async def status_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._show_time_impersonator_status(interaction)
 
-    @discord.ui.button(label="Enable", style=discord.ButtonStyle.success, emoji="✅", row=0)
+    @discord.ui.button(
+        label="Enable", style=discord.ButtonStyle.success, emoji="✅", row=0
+    )
     async def enable_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._enable_time_impersonator(interaction)
 
-    @discord.ui.button(label="Disable", style=discord.ButtonStyle.danger, emoji="❌", row=0)
+    @discord.ui.button(
+        label="Disable", style=discord.ButtonStyle.danger, emoji="❌", row=0
+    )
     async def disable_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._disable_time_impersonator(interaction)
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -673,7 +771,9 @@ class ContentReviewDisabledView(discord.ui.View):
         super().__init__(timeout=120)
         self.cog = cog
 
-    @discord.ui.button(label="Enable Content Review", style=discord.ButtonStyle.success, emoji="✅")
+    @discord.ui.button(
+        label="Enable Content Review", style=discord.ButtonStyle.success, emoji="✅"
+    )
     async def enable_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -684,7 +784,9 @@ class ContentReviewDisabledView(discord.ui.View):
             )
             return
         try:
-            from lifeguard.modules.content_review.views.config_ui import ContentReviewSetupView
+            from lifeguard.modules.content_review.views.config_ui import (
+                ContentReviewSetupView,
+            )
         except ImportError:
             LOGGER.exception("Failed to import ContentReviewSetupView")
             await interaction.response.send_message(

@@ -27,9 +27,13 @@ def _user_doc_id(user_id: int) -> str:
 # --- Config CRUD ---
 
 
-def get_config(firestore: FirestoreClient, guild_id: int) -> TimeImpersonatorConfig | None:
+def get_config(
+    firestore: FirestoreClient, guild_id: int
+) -> TimeImpersonatorConfig | None:
     """Get the time impersonator configuration for a guild."""
-    doc = firestore.collection(CONFIGS_COLLECTION).document(_guild_doc_id(guild_id)).get()
+    doc = (
+        firestore.collection(CONFIGS_COLLECTION).document(_guild_doc_id(guild_id)).get()
+    )
     if not doc.exists:
         return None
     return TimeImpersonatorConfig.from_firestore(doc.to_dict())

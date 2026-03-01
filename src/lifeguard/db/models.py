@@ -64,14 +64,18 @@ class Build(Base):
         DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc)
     )
 
-    player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"), nullable=True)
+    player_id: Mapped[int | None] = mapped_column(
+        ForeignKey("players.id"), nullable=True
+    )
     player = relationship("Player")
 
     # Optional source reference (e.g., a kill event id)
     source: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    slots = relationship("BuildSlot", back_populates="build", cascade="all, delete-orphan")
+    slots = relationship(
+        "BuildSlot", back_populates="build", cascade="all, delete-orphan"
+    )
 
 
 class BuildSlot(Base):
@@ -84,14 +88,18 @@ class BuildSlot(Base):
     # Examples: mainhand, offhand, head, armor, shoes, cape, bag, mount, potion, food
     slot: Mapped[str] = mapped_column(String(32), index=True)
 
-    item_db_id: Mapped[int | None] = mapped_column(ForeignKey("items.id"), nullable=True)
+    item_db_id: Mapped[int | None] = mapped_column(
+        ForeignKey("items.id"), nullable=True
+    )
     item = relationship("Item")
 
     # Captured attributes (often available in kill/event payloads)
     count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     quality: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    __table_args__ = (Index("ix_build_slots_build_slot", "build_id", "slot", unique=True),)
+    __table_args__ = (
+        Index("ix_build_slots_build_slot", "build_id", "slot", unique=True),
+    )
 
 
 class KillEvent(Base):
@@ -101,15 +109,21 @@ class KillEvent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     event_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    occurred_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
+    occurred_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
 
     zone_id: Mapped[int | None] = mapped_column(ForeignKey("zones.id"), nullable=True)
     zone = relationship("Zone")
 
-    killer_player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"), nullable=True)
+    killer_player_id: Mapped[int | None] = mapped_column(
+        ForeignKey("players.id"), nullable=True
+    )
     killer_player = relationship("Player", foreign_keys=[killer_player_id])
 
-    victim_player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"), nullable=True)
+    victim_player_id: Mapped[int | None] = mapped_column(
+        ForeignKey("players.id"), nullable=True
+    )
     victim_player = relationship("Player", foreign_keys=[victim_player_id])
 
     total_victim_kill_fame: Mapped[int | None] = mapped_column(Integer, nullable=True)

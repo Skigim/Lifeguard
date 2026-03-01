@@ -8,7 +8,11 @@ import discord
 
 if TYPE_CHECKING:
     from lifeguard.modules.content_review.config import ContentReviewConfig
-    from lifeguard.modules.content_review.models import ReviewSession, Submission, UserProfile
+    from lifeguard.modules.content_review.models import (
+        ReviewSession,
+        Submission,
+        UserProfile,
+    )
 
 
 def build_submission_embed(
@@ -136,9 +140,7 @@ def build_leaderboard_embed(
         member = guild.get_member(profile.user_id)
         name = member.display_name if member else f"User {profile.user_id}"
 
-        lines.append(
-            f"{medal} {name} — **{profile.total_reviews_given}** reviews"
-        )
+        lines.append(f"{medal} {name} — **{profile.total_reviews_given}** reviews")
 
     embed.description = "\n".join(lines)
     return embed

@@ -50,13 +50,17 @@ class UserLimitModal(discord.ui.Modal, title="Set User Limit"):
             return
 
         limit = int(raw_value)
-        await self.cog.update_lobby_user_limit(interaction, self.voice_channel_id, limit)
+        await self.cog.update_lobby_user_limit(
+            interaction, self.voice_channel_id, limit
+        )
 
 
 class LobbyConfigView(discord.ui.View):
     """Owner-only controls for a temporary voice lobby."""
 
-    def __init__(self, cog: "VoiceLobbyCog", voice_channel_id: int, owner_id: int) -> None:
+    def __init__(
+        self, cog: "VoiceLobbyCog", voice_channel_id: int, owner_id: int
+    ) -> None:
         super().__init__(timeout=1800)
         self.cog = cog
         self.voice_channel_id = voice_channel_id
@@ -78,15 +82,21 @@ class LobbyConfigView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button,
     ) -> None:
-        await interaction.response.send_modal(RenameLobbyModal(self.cog, self.voice_channel_id))
+        await interaction.response.send_modal(
+            RenameLobbyModal(self.cog, self.voice_channel_id)
+        )
 
-    @discord.ui.button(label="Set Limit", style=discord.ButtonStyle.secondary, emoji="👥")
+    @discord.ui.button(
+        label="Set Limit", style=discord.ButtonStyle.secondary, emoji="👥"
+    )
     async def set_limit_button(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button,
     ) -> None:
-        await interaction.response.send_modal(UserLimitModal(self.cog, self.voice_channel_id))
+        await interaction.response.send_modal(
+            UserLimitModal(self.cog, self.voice_channel_id)
+        )
 
     @discord.ui.button(label="Unlock", style=discord.ButtonStyle.secondary, emoji="🔓")
     async def unlock_button(

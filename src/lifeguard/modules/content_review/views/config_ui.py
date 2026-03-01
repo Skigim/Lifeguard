@@ -50,31 +50,41 @@ class ContentReviewConfigView(discord.ui.View):
         super().__init__(timeout=120)
         self.cog = cog
 
-    @discord.ui.button(label="View Config", style=discord.ButtonStyle.secondary, emoji="📋", row=0)
+    @discord.ui.button(
+        label="View Config", style=discord.ButtonStyle.secondary, emoji="📋", row=0
+    )
     async def view_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._show_config(interaction)
 
-    @discord.ui.button(label="Sticky Message", style=discord.ButtonStyle.secondary, emoji="📌", row=0)
+    @discord.ui.button(
+        label="Sticky Message", style=discord.ButtonStyle.secondary, emoji="📌", row=0
+    )
     async def sticky_menu_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._show_sticky_menu(interaction)
 
-    @discord.ui.button(label="Review Roles", style=discord.ButtonStyle.secondary, emoji="👥", row=0)
+    @discord.ui.button(
+        label="Review Roles", style=discord.ButtonStyle.secondary, emoji="👥", row=0
+    )
     async def review_roles_menu_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._show_reviewer_roles_menu(interaction)
 
-    @discord.ui.button(label="Edit Form", style=discord.ButtonStyle.secondary, emoji="🧩", row=0)
+    @discord.ui.button(
+        label="Edit Form", style=discord.ButtonStyle.secondary, emoji="🧩", row=0
+    )
     async def edit_form_menu_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._show_form_editor_menu(interaction)
 
-    @discord.ui.button(label="Settings", style=discord.ButtonStyle.secondary, emoji="⚙️", row=0)
+    @discord.ui.button(
+        label="Settings", style=discord.ButtonStyle.secondary, emoji="⚙️", row=0
+    )
     async def settings_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -82,13 +92,17 @@ class ContentReviewConfigView(discord.ui.View):
             content="Configure settings:", embed=None, view=SettingsView(self.cog)
         )
 
-    @discord.ui.button(label="Disable", style=discord.ButtonStyle.danger, emoji="❌", row=1)
+    @discord.ui.button(
+        label="Disable", style=discord.ButtonStyle.danger, emoji="❌", row=1
+    )
     async def disable_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._disable_content_review(interaction)
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -108,7 +122,9 @@ class StickyConfigMenuView(discord.ui.View):
         super().__init__(timeout=120)
         self.cog = cog
 
-    @discord.ui.button(label="Edit Sticky", style=discord.ButtonStyle.secondary, emoji="✏️", row=0)
+    @discord.ui.button(
+        label="Edit Sticky", style=discord.ButtonStyle.secondary, emoji="✏️", row=0
+    )
     async def edit_sticky_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -121,13 +137,17 @@ class StickyConfigMenuView(discord.ui.View):
         config = repo.get_or_create_config(self.cog.firestore, interaction.guild.id)
         await interaction.response.send_modal(SetStickyModal(self.cog, config))
 
-    @discord.ui.button(label="Repost Submit", style=discord.ButtonStyle.secondary, emoji="🔄", row=0)
+    @discord.ui.button(
+        label="Repost Submit", style=discord.ButtonStyle.secondary, emoji="🔄", row=0
+    )
     async def repost_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._repost_button(interaction)
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -141,7 +161,9 @@ class ReviewerRolesMenuView(discord.ui.View):
         super().__init__(timeout=120)
         self.cog = cog
 
-    @discord.ui.button(label="Add Role", style=discord.ButtonStyle.success, emoji="➕", row=0)
+    @discord.ui.button(
+        label="Add Role", style=discord.ButtonStyle.success, emoji="➕", row=0
+    )
     async def add_role_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -152,13 +174,17 @@ class ReviewerRolesMenuView(discord.ui.View):
             view=view,
         )
 
-    @discord.ui.button(label="Remove Role", style=discord.ButtonStyle.secondary, emoji="➖", row=0)
+    @discord.ui.button(
+        label="Remove Role", style=discord.ButtonStyle.secondary, emoji="➖", row=0
+    )
     async def remove_role_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._show_remove_role_view(interaction)
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -172,31 +198,41 @@ class EditFormMenuView(discord.ui.View):
         super().__init__(timeout=120)
         self.cog = cog
 
-    @discord.ui.button(label="Add Field", style=discord.ButtonStyle.primary, emoji="📝", row=0)
+    @discord.ui.button(
+        label="Add Field", style=discord.ButtonStyle.primary, emoji="📝", row=0
+    )
     async def add_field_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await interaction.response.send_modal(AddFieldModal(self.cog))
 
-    @discord.ui.button(label="Remove Field", style=discord.ButtonStyle.secondary, emoji="🗑️", row=0)
+    @discord.ui.button(
+        label="Remove Field", style=discord.ButtonStyle.secondary, emoji="🗑️", row=0
+    )
     async def remove_field_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._show_remove_field_view(interaction)
 
-    @discord.ui.button(label="Add Category", style=discord.ButtonStyle.primary, emoji="⭐", row=0)
+    @discord.ui.button(
+        label="Add Category", style=discord.ButtonStyle.primary, emoji="⭐", row=0
+    )
     async def add_category_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await interaction.response.send_modal(AddCategoryModal(self.cog))
 
-    @discord.ui.button(label="Remove Category", style=discord.ButtonStyle.secondary, emoji="🗑️", row=0)
+    @discord.ui.button(
+        label="Remove Category", style=discord.ButtonStyle.secondary, emoji="🗑️", row=0
+    )
     async def remove_category_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._show_remove_category_view(interaction)
 
-    @discord.ui.button(label="Ticket Category", style=discord.ButtonStyle.secondary, emoji="🗂️", row=1)
+    @discord.ui.button(
+        label="Ticket Category", style=discord.ButtonStyle.secondary, emoji="🗂️", row=1
+    )
     async def ticket_category_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -206,7 +242,9 @@ class EditFormMenuView(discord.ui.View):
             view=AssignTicketCategoryView(self.cog),
         )
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -230,7 +268,9 @@ class AddRoleView(discord.ui.View):
         role = select.values[0]
         await self.cog._add_reviewer_role(interaction, role)
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -271,7 +311,9 @@ class AssignTicketCategoryView(discord.ui.View):
             return
         await self.cog._set_ticket_category(interaction, category)
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -296,7 +338,9 @@ class RemoveRoleView(discord.ui.View):
         role = select.values[0]
         await self.cog._remove_reviewer_role(interaction, role)
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -342,7 +386,9 @@ class EnableContentReviewModal(discord.ui.Modal, title="Enable Content Review"):
         reviewer_role_value = self.reviewer_role.value.strip()
         role: discord.Role | None = None
         if reviewer_role_value:
-            role = self.cog._resolve_role_from_input(interaction.guild, reviewer_role_value)
+            role = self.cog._resolve_role_from_input(
+                interaction.guild, reviewer_role_value
+            )
             if role is None:
                 await interaction.response.send_message(
                     "Could not find that role. Use a valid role ID or mention.",
@@ -350,7 +396,9 @@ class EnableContentReviewModal(discord.ui.Modal, title="Enable Content Review"):
                 )
                 return
 
-        await self.cog._enable_content_review(interaction, category, role, use_send=True)
+        await self.cog._enable_content_review(
+            interaction, category, role, use_send=True
+        )
 
 
 class RemoveFieldByIdModal(discord.ui.Modal, title="Remove Submission Field"):
@@ -367,7 +415,9 @@ class RemoveFieldByIdModal(discord.ui.Modal, title="Remove Submission Field"):
         self.cog = cog
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        await self.cog._remove_field(interaction, self.field_id.value.strip(), use_send=True)
+        await self.cog._remove_field(
+            interaction, self.field_id.value.strip(), use_send=True
+        )
 
 
 class RemoveCategoryByIdModal(discord.ui.Modal, title="Remove Review Category"):
@@ -450,13 +500,17 @@ class RemoveFieldView(discord.ui.View):
         self.cog = cog
         self.fields = fields
 
-    @discord.ui.button(label="Enter Field ID", style=discord.ButtonStyle.danger, emoji="🗑️")
+    @discord.ui.button(
+        label="Enter Field ID", style=discord.ButtonStyle.danger, emoji="🗑️"
+    )
     async def open_modal(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await interaction.response.send_modal(RemoveFieldByIdModal(self.cog))
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
@@ -517,18 +571,24 @@ class AddCategoryModal(discord.ui.Modal, title="Add Review Category"):
 class RemoveCategoryView(discord.ui.View):
     """View for removing a review category."""
 
-    def __init__(self, cog: "ContentReviewCog", categories: list[ReviewCategory]) -> None:
+    def __init__(
+        self, cog: "ContentReviewCog", categories: list[ReviewCategory]
+    ) -> None:
         super().__init__(timeout=60)
         self.cog = cog
         self.categories = categories
 
-    @discord.ui.button(label="Enter Category ID", style=discord.ButtonStyle.danger, emoji="🗑️")
+    @discord.ui.button(
+        label="Enter Category ID", style=discord.ButtonStyle.danger, emoji="🗑️"
+    )
     async def open_modal(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await interaction.response.send_modal(RemoveCategoryByIdModal(self.cog))
 
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
+    @discord.ui.button(
+        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
+    )
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:

@@ -67,7 +67,9 @@ class ContentReviewConfig:
     submission_channel_id: int | None = None  # Where the submit button is posted
     sticky_message_id: int | None = None  # The pinned submit button message
     ticket_category_id: int | None = None  # Category where ticket channels are created
-    reviewer_role_ids: list[int] = field(default_factory=list)  # Roles allowed to review
+    reviewer_role_ids: list[int] = field(
+        default_factory=list
+    )  # Roles allowed to review
     submission_fields: list[SubmissionField] = field(default_factory=list)
     review_categories: list[ReviewCategory] = field(default_factory=list)
     dm_on_complete: bool = True  # DM submitter when review is done

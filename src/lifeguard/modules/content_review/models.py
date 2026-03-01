@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from typing import Literal
 
 
-
 @dataclass
 class ReviewNote:
     """A note attached to a specific category in a review."""
@@ -121,7 +120,8 @@ class ReviewSession:
                 k: ReviewNote.from_firestore(v)
                 for k, v in data.get("notes", {}).items()
             },
-            created_at=parse_datetime(data.get("created_at")) or datetime.now(timezone.utc),
+            created_at=parse_datetime(data.get("created_at"))
+            or datetime.now(timezone.utc),
             completed_at=parse_datetime(data.get("completed_at")),
         )
 
@@ -169,7 +169,9 @@ class UserProfile:
     total_submissions: int = 0
     total_reviews_given: int = 0
     average_score: float = 0.0  # Running average across all submissions
-    category_averages: dict[str, float] = field(default_factory=dict)  # category_id -> avg
+    category_averages: dict[str, float] = field(
+        default_factory=dict
+    )  # category_id -> avg
     badges: list[str] = field(default_factory=list)
     submission_history: list[SubmissionSummary] = field(default_factory=list)
 
@@ -221,7 +223,9 @@ class UserProfile:
                 # Simple running average per category
                 old_avg = self.category_averages[cat_id]
                 # Approximate - assumes equal submissions per category
-                self.category_averages[cat_id] = old_avg + (score - old_avg) / self.total_submissions
+                self.category_averages[cat_id] = (
+                    old_avg + (score - old_avg) / self.total_submissions
+                )
 
         # Add to history
         self.submission_history.append(

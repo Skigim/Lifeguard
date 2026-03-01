@@ -29,7 +29,9 @@ class NoteModal(discord.ui.Modal):
     def __init__(
         self,
         category_name: str,
-        on_submit_callback: Callable[[discord.Interaction, str, str], Coroutine[Any, Any, None]],
+        on_submit_callback: Callable[
+            [discord.Interaction, str, str], Coroutine[Any, Any, None]
+        ],
         existing_reference: str = "",
         existing_feedback: str = "",
     ) -> None:

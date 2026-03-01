@@ -5,7 +5,12 @@ from datetime import datetime, timezone
 from lifeguard.backend_models import BuildDoc, ItemRef
 from lifeguard.config import load_config
 from lifeguard.firestore_client import init_firestore
-from lifeguard.firestore_repo import upsert_guild, upsert_player, upsert_zone, write_build
+from lifeguard.firestore_repo import (
+    upsert_guild,
+    upsert_player,
+    upsert_zone,
+    write_build,
+)
 
 
 def main() -> int:

@@ -1153,7 +1153,9 @@ class ContentReviewCog(commands.Cog):
         # Add custom_id with submission ID for persistence
         view.children[0].custom_id = f"content_review:start_review:{submission_id}"
 
-        reviewer_mentions = " ".join(role.mention for role in reviewer_roles) if reviewer_roles else ""
+        reviewer_mentions = (
+            " ".join(role.mention for role in reviewer_roles) if reviewer_roles else ""
+        )
         ping_content = f"{reviewer_mentions} {interaction.user.mention} New content review ticket is ready.".strip()
 
         await ticket_channel.send(

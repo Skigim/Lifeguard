@@ -55,9 +55,7 @@ async def timezone_autocomplete(  # NOSONAR - discord.py requires async
 
     if not current:
         # Show common timezones when no input
-        return [
-            app_commands.Choice(name=tz, value=tz) for tz in _COMMON_TIMEZONES[:25]
-        ]
+        return [app_commands.Choice(name=tz, value=tz) for tz in _COMMON_TIMEZONES[:25]]
 
     # Filter and prioritize matches
     matches: list[str] = []
@@ -199,7 +197,11 @@ async def _get_or_create_webhook(
 
     # Look for existing bot-owned webhook
     for webhook in webhooks:
-        if webhook.user and webhook.user.id == bot_user.id and webhook.name == WEBHOOK_NAME:
+        if (
+            webhook.user
+            and webhook.user.id == bot_user.id
+            and webhook.name == WEBHOOK_NAME
+        ):
             return webhook
 
     # Create new webhook
@@ -209,7 +211,9 @@ async def _get_or_create_webhook(
 # --- Feature Check ---
 
 
-async def _check_time_impersonator_enabled(interaction: discord.Interaction) -> bool:  # NOSONAR
+async def _check_time_impersonator_enabled(
+    interaction: discord.Interaction,
+) -> bool:  # NOSONAR
     """Check that time impersonator is enabled for this guild."""
     if not interaction.guild:
         return False
@@ -257,9 +261,7 @@ class TimeImpersonatorCog(commands.Cog):
     ) -> None:
         """Set the user's preferred timezone."""
         if not self.firestore:
-            await interaction.response.send_message(
-                _MSG_DB_UNAVAILABLE, ephemeral=True
-            )
+            await interaction.response.send_message(_MSG_DB_UNAVAILABLE, ephemeral=True)
             return
 
         # Validate timezone
@@ -286,9 +288,7 @@ class TimeImpersonatorCog(commands.Cog):
     ) -> None:
         """Clear the user's saved timezone."""
         if not self.firestore:
-            await interaction.response.send_message(
-                _MSG_DB_UNAVAILABLE, ephemeral=True
-            )
+            await interaction.response.send_message(_MSG_DB_UNAVAILABLE, ephemeral=True)
             return
 
         repo.delete_user_timezone(self.firestore, interaction.user.id)
@@ -301,7 +301,9 @@ class TimeImpersonatorCog(commands.Cog):
         name="time",
         description="Send a message with time references converted to Discord timestamps",
     )
-    @app_commands.describe(message="Your message with time references (e.g., 'Raid starts at 8pm')")
+    @app_commands.describe(
+        message="Your message with time references (e.g., 'Raid starts at 8pm')"
+    )
     async def send_time_message(
         self,
         interaction: discord.Interaction,
@@ -309,13 +311,13 @@ class TimeImpersonatorCog(commands.Cog):
     ) -> None:
         """Send a message with natural language times converted to Discord timestamps."""
         if not self.firestore:
-            await interaction.response.send_message(
-                _MSG_DB_UNAVAILABLE, ephemeral=True
-            )
+            await interaction.response.send_message(_MSG_DB_UNAVAILABLE, ephemeral=True)
             return
 
         # Check if in a guild text channel
-        if not interaction.guild or not isinstance(interaction.channel, discord.TextChannel):
+        if not interaction.guild or not isinstance(
+            interaction.channel, discord.TextChannel
+        ):
             await interaction.response.send_message(
                 "This command can only be used in a server text channel.",
                 ephemeral=True,

@@ -45,9 +45,24 @@ _FEATURE_VOICE_LOBBY = "Voice Lobby"
 
 # --- Feature Registry ---
 FEATURES: list[tuple[str, str, str, bool]] = [
-    ("content_review", "Content Review", "Review system with tickets, scoring, and leaderboards", True),
-    ("time_impersonator", "Time Impersonator", "Send messages with dynamic Discord timestamps", False),
-    ("voice_lobby", "Voice Lobby", "Temporary voice lobbies created from an entry channel", False),
+    (
+        "content_review",
+        "Content Review",
+        "Review system with tickets, scoring, and leaderboards",
+        True,
+    ),
+    (
+        "time_impersonator",
+        "Time Impersonator",
+        "Send messages with dynamic Discord timestamps",
+        False,
+    ),
+    (
+        "voice_lobby",
+        "Voice Lobby",
+        "Temporary voice lobbies created from an entry channel",
+        False,
+    ),
     ("albion_prices", "Albion Prices", "Look up Albion Online market prices", False),
     ("albion_builds", "Albion Builds", "Share and browse Albion Online builds", False),
 ]
@@ -112,7 +127,9 @@ class ConfigCog(commands.Cog):
         if use_send:
             await interaction.response.send_message(content, ephemeral=True)
         else:
-            await interaction.response.edit_message(content=content, embed=None, view=None)
+            await interaction.response.edit_message(
+                content=content, embed=None, view=None
+            )
 
     def _user_can_manage_bot(self, interaction: discord.Interaction) -> bool:
         """Check if user has permission to manage bot settings."""
@@ -168,7 +185,9 @@ class ConfigCog(commands.Cog):
                     "Content Review module is not loaded.", ephemeral=True
                 )
                 return
-            from lifeguard.modules.content_review.views.config_ui import ContentReviewSetupView
+            from lifeguard.modules.content_review.views.config_ui import (
+                ContentReviewSetupView,
+            )
 
             view = ContentReviewSetupView(cr_cog)
             embed = discord.Embed(
@@ -179,7 +198,9 @@ class ConfigCog(commands.Cog):
                 ),
                 color=discord.Color.blue(),
             )
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message(
+                embed=embed, view=view, ephemeral=True
+            )
             return
 
         # Simple features enable directly
@@ -358,7 +379,9 @@ class ConfigCog(commands.Cog):
             content=None,
         )
 
-    async def _show_time_impersonator_menu(self, interaction: discord.Interaction) -> None:
+    async def _show_time_impersonator_menu(
+        self, interaction: discord.Interaction
+    ) -> None:
         embed = discord.Embed(
             title="🕐 Time Impersonator Config",
             description="Enable, disable, or view status of the Time Impersonator feature.",
@@ -370,7 +393,9 @@ class ConfigCog(commands.Cog):
             content=None,
         )
 
-    async def _show_time_impersonator_status(self, interaction: discord.Interaction) -> None:
+    async def _show_time_impersonator_status(
+        self, interaction: discord.Interaction
+    ) -> None:
         if not interaction.guild:
             return
 
@@ -441,7 +466,9 @@ class ConfigCog(commands.Cog):
         )
         LOGGER.info("Time Impersonator disabled: guild=%s", interaction.guild.id)
 
-    async def _disable_time_impersonator_direct(self, interaction: discord.Interaction) -> None:
+    async def _disable_time_impersonator_direct(
+        self, interaction: discord.Interaction
+    ) -> None:
         await self._disable_time_impersonator(interaction, use_send=True)
 
     # ------------------------------------------------------------------
@@ -504,7 +531,9 @@ class ConfigCog(commands.Cog):
             use_send=use_send,
         )
 
-    async def _disable_voice_lobby_direct(self, interaction: discord.Interaction) -> None:
+    async def _disable_voice_lobby_direct(
+        self, interaction: discord.Interaction
+    ) -> None:
         await self._disable_voice_lobby(interaction, use_send=True)
 
     @staticmethod
@@ -751,8 +780,10 @@ class ConfigCog(commands.Cog):
         self, interaction: discord.Interaction, role: discord.Role
     ) -> None:
         await self._add_voice_role(
-            interaction, role,
-            field_name="creator_role_ids", label="creator",
+            interaction,
+            role,
+            field_name="creator_role_ids",
+            label="creator",
             return_view=VoiceLobbyConfigView(self),
         )
 
@@ -760,15 +791,20 @@ class ConfigCog(commands.Cog):
         self, interaction: discord.Interaction, role: discord.Role
     ) -> None:
         await self._remove_voice_role(
-            interaction, role,
-            field_name="creator_role_ids", label="creator",
+            interaction,
+            role,
+            field_name="creator_role_ids",
+            label="creator",
             return_view=VoiceLobbyConfigView(self),
         )
 
-    async def _clear_voice_lobby_creator_roles(self, interaction: discord.Interaction) -> None:
+    async def _clear_voice_lobby_creator_roles(
+        self, interaction: discord.Interaction
+    ) -> None:
         await self._clear_voice_roles(
             interaction,
-            field_name="creator_role_ids", label="creator",
+            field_name="creator_role_ids",
+            label="creator",
             return_view=VoiceLobbyConfigView(self),
         )
 
@@ -776,8 +812,10 @@ class ConfigCog(commands.Cog):
         self, interaction: discord.Interaction, role: discord.Role
     ) -> None:
         await self._add_voice_role(
-            interaction, role,
-            field_name="join_role_ids", label="join",
+            interaction,
+            role,
+            field_name="join_role_ids",
+            label="join",
             return_view=VoiceLobbyConfigView(self),
         )
 
@@ -785,15 +823,20 @@ class ConfigCog(commands.Cog):
         self, interaction: discord.Interaction, role: discord.Role
     ) -> None:
         await self._remove_voice_role(
-            interaction, role,
-            field_name="join_role_ids", label="join",
+            interaction,
+            role,
+            field_name="join_role_ids",
+            label="join",
             return_view=VoiceLobbyConfigView(self),
         )
 
-    async def _clear_voice_lobby_join_roles(self, interaction: discord.Interaction) -> None:
+    async def _clear_voice_lobby_join_roles(
+        self, interaction: discord.Interaction
+    ) -> None:
         await self._clear_voice_roles(
             interaction,
-            field_name="join_role_ids", label="join",
+            field_name="join_role_ids",
+            label="join",
             return_view=VoiceLobbyConfigView(self),
         )
 
@@ -894,7 +937,8 @@ class ConfigCog(commands.Cog):
         if feature == "prices":
             if not features.albion_prices_enabled:
                 await interaction.response.send_message(
-                    f"{_FEATURE_ALBION_PRICES} is not currently enabled.", ephemeral=True
+                    f"{_FEATURE_ALBION_PRICES} is not currently enabled.",
+                    ephemeral=True,
                 )
                 return
             features.albion_prices_enabled = False
@@ -902,7 +946,8 @@ class ConfigCog(commands.Cog):
         else:
             if not features.albion_builds_enabled:
                 await interaction.response.send_message(
-                    f"{_FEATURE_ALBION_BUILDS} is not currently enabled.", ephemeral=True
+                    f"{_FEATURE_ALBION_BUILDS} is not currently enabled.",
+                    ephemeral=True,
                 )
                 return
             features.albion_builds_enabled = False
@@ -921,8 +966,16 @@ class ConfigCog(commands.Cog):
 
         features = albion_repo.get_guild_features(self.firestore, interaction.guild.id)
 
-        prices_status = _STATUS_ENABLED if features and features.albion_prices_enabled else _STATUS_DISABLED
-        builds_status = _STATUS_ENABLED if features and features.albion_builds_enabled else _STATUS_DISABLED
+        prices_status = (
+            _STATUS_ENABLED
+            if features and features.albion_prices_enabled
+            else _STATUS_DISABLED
+        )
+        builds_status = (
+            _STATUS_ENABLED
+            if features and features.albion_builds_enabled
+            else _STATUS_DISABLED
+        )
 
         embed = discord.Embed(
             title="⚔️ Albion Features Status",
@@ -931,7 +984,9 @@ class ConfigCog(commands.Cog):
         embed.add_field(name="💰 Price Lookup", value=prices_status, inline=True)
         embed.add_field(name="⚔️ Builds", value=builds_status, inline=True)
 
-        await interaction.response.edit_message(embed=embed, view=BackToAlbionView(self))
+        await interaction.response.edit_message(
+            embed=embed, view=BackToAlbionView(self)
+        )
 
     # ------------------------------------------------------------------
     # Bot Admin Role helpers
@@ -968,7 +1023,9 @@ class ConfigCog(commands.Cog):
                 color=discord.Color.blue(),
             )
 
-        await interaction.response.edit_message(embed=embed, view=BackToGeneralView(self))
+        await interaction.response.edit_message(
+            embed=embed, view=BackToGeneralView(self)
+        )
 
     async def _add_bot_admin_role(
         self,
@@ -1049,7 +1106,9 @@ class ConfigCog(commands.Cog):
             f"✅ Removed {role.mention} from bot admin roles.",
             use_send=use_send,
         )
-        LOGGER.info("Removed bot admin role %s: guild=%s", role.id, interaction.guild.id)
+        LOGGER.info(
+            "Removed bot admin role %s: guild=%s", role.id, interaction.guild.id
+        )
 
     async def _clear_bot_admin_roles(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
@@ -1076,7 +1135,9 @@ class ConfigCog(commands.Cog):
     # Content Review enable/disable (delegated)
     # ------------------------------------------------------------------
 
-    async def _disable_content_review_direct(self, interaction: discord.Interaction) -> None:
+    async def _disable_content_review_direct(
+        self, interaction: discord.Interaction
+    ) -> None:
         """Disable content review via /disable-feature command."""
         cr_cog = self.bot.get_cog("ContentReviewCog")
         if not cr_cog:

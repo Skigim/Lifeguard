@@ -43,7 +43,9 @@ class GuildFeatures:
         )
 
 
-def get_guild_features(firestore: "FirestoreClient", guild_id: int) -> GuildFeatures | None:
+def get_guild_features(
+    firestore: "FirestoreClient", guild_id: int
+) -> GuildFeatures | None:
     """Get guild feature flags."""
     doc = firestore.collection(GUILD_FEATURES_COLLECTION).document(str(guild_id)).get()
     if not doc.exists:
@@ -51,7 +53,9 @@ def get_guild_features(firestore: "FirestoreClient", guild_id: int) -> GuildFeat
     return GuildFeatures.from_firestore(doc.to_dict())
 
 
-def get_or_create_guild_features(firestore: "FirestoreClient", guild_id: int) -> GuildFeatures:
+def get_or_create_guild_features(
+    firestore: "FirestoreClient", guild_id: int
+) -> GuildFeatures:
     """Get or create guild feature flags."""
     features = get_guild_features(firestore, guild_id)
     if features is None:
