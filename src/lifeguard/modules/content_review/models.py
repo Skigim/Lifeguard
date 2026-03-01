@@ -4,7 +4,6 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Literal
 
-from lifeguard.utils import drop_none
 
 
 @dataclass
