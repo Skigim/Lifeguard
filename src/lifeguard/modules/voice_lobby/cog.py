@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -14,6 +16,27 @@ if TYPE_CHECKING:
     from google.cloud.firestore import Client as FirestoreClient
 
 LOGGER = logging.getLogger(__name__)
+
+# #region agent log
+def _vl_debug(location: str, message: str, data: dict, hypothesis_id: str) -> None:
+    try:
+        with open("debug-b6b588.log", "a", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "sessionId": "b6b588",
+                        "location": location,
+                        "message": message,
+                        "data": data,
+                        "hypothesisId": hypothesis_id,
+                        "timestamp": int(time.time() * 1000),
+                    }
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+# #endregion
 
 
 @dataclass
@@ -366,7 +389,47 @@ class VoiceLobbyCog(commands.Cog):
         if after.channel is None:
             return
 
-        config = repo.get_config(self.firestore, member.guild.id)
+        # #region agent log
+        _vl_debug(
+            "voice_lobby/cog.py:on_voice_state_update",
+            "voice state update after join",
+            {
+                "guild_id": member.guild.id,
+                "member_id": member.id,
+                "after_channel_id": after.channel.id if after.channel else None,
+                "firestore_is_none": self.firestore is None,
+            },
+            "A",
+        )
+        # #endregion
+        try:
+            config = repo.get_config(self.firestore, member.guild.id)
+        except Exception as e:  # noqa: BLE001
+            # #region agent log
+            _vl_debug(
+                "voice_lobby/cog.py:get_config",
+                "get_config raised",
+                {"error_type": type(e).__name__, "error": str(e)},
+                "A",
+            )
+            # #endregion
+            raise
+        # #region agent log
+        _vl_debug(
+            "voice_lobby/cog.py:after get_config",
+            "config result",
+            {
+                "config_is_none": config is None,
+                "enabled": getattr(config, "enabled", None) if config else None,
+                "entry_voice_channel_id": getattr(
+                    config, "entry_voice_channel_id", None
+                )
+                if config
+                else None,
+            },
+            "B",
+        )
+        # #endregion
         if (
             config is None
             or not config.enabled
@@ -374,6 +437,20 @@ class VoiceLobbyCog(commands.Cog):
         ):
             return
 
+        # #region agent log
+        _vl_debug(
+            "voice_lobby/cog.py:channel_id_check",
+            "entry channel comparison",
+            {
+                "after_channel_id": after.channel.id,
+                "after_channel_id_type": type(after.channel.id).__name__,
+                "config_entry_id": config.entry_voice_channel_id,
+                "config_entry_id_type": type(config.entry_voice_channel_id).__name__,
+                "match": after.channel.id == config.entry_voice_channel_id,
+            },
+            "C",
+        )
+        # #endregion
         managed_session = self._sessions_by_voice_id.get(after.channel.id)
         if managed_session is not None:
             if before.channel is not None and before.channel.id == after.channel.id:
@@ -392,7 +469,20 @@ class VoiceLobbyCog(commands.Cog):
         if before.channel is not None and before.channel.id == after.channel.id:
             return
 
-        if not self._can_create_lobby(member, config):
+        # #region agent log
+        can_create = self._can_create_lobby(member, config)
+        _vl_debug(
+            "voice_lobby/cog.py:can_create_lobby",
+            "creator check",
+            {
+                "can_create": can_create,
+                "creator_role_ids": getattr(config, "creator_role_ids", []),
+                "member_role_ids": [r.id for r in member.roles],
+            },
+            "D",
+        )
+        # #endregion
+        if not can_create:
             await member.move_to(
                 None,
                 reason="User does not match configured lobby creator roles",
@@ -414,8 +504,28 @@ class VoiceLobbyCog(commands.Cog):
             return
 
         try:
+            # #region agent log
+            _vl_debug(
+                "voice_lobby/cog.py:create_lobby_start",
+                "creating lobby",
+                {"member_id": member.id, "guild_id": member.guild.id},
+                "E",
+            )
+            # #endregion
             await self._create_lobby_for_member(member, after.channel)
-        except (discord.Forbidden, discord.HTTPException):
+        except (discord.Forbidden, discord.HTTPException) as e:
+            # #region agent log
+            _vl_debug(
+                "voice_lobby/cog.py:create_lobby_exception",
+                "create lobby failed",
+                {
+                    "member_id": member.id,
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                },
+                "E",
+            )
+            # #endregion
             LOGGER.exception(
                 "Failed to create temporary lobby for member %s", member.id
             )
