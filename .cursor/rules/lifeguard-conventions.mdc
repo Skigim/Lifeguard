@@ -1,0 +1,41 @@
+---
+description: Key architectural patterns, tech stack, and coding conventions for the Lifeguard Discord Bot.
+globs: src/lifeguard/**/*.py
+---
+
+# Lifeguard Bot Conventions
+
+## Tech Stack
+- Python 3.11+
+- `discord.py` >= 2.4.0
+- Firebase Admin SDK (Firestore)
+- `python-dotenv`
+- `dateparser`
+
+## Architecture & Data Flow
+- Modular feature directories in `src/lifeguard/modules/<name>/`.
+  - Modules typically contain: `__init__.py`, `cog.py`, `models.py`, `repo.py`, `config.py`, and optionally a `views/` directory.
+- Data Flow: Discord Events -> Cog Command Handler (`cog.py`) -> Repository Layer (`repo.py`) -> Firestore Client.
+- Shared exceptions in `exceptions.py` and utilities in `utils.py`.
+- Shared resources like `bot.lifeguard_http_session` and `bot.lifeguard_firestore` are attached to the bot instance.
+
+## Database Patterns
+- **Primary Database**: Firestore (Document-based storage).
+- **Repository Pattern**: All database operations go through functions in `repo.py` (e.g., `get_item`, `save_item`, `delete_item`).
+- **Models**: Defined in `models.py` using `@dataclass` (use `frozen=True` for immutable objects). Must implement `to_firestore(self) -> dict` and `@classmethod from_firestore(cls, data: dict) -> Model`. Use `drop_none(asdict(self))` where appropriate.
+
+## Configuration & Feature Flags
+- **Environment config**: Loaded via frozen dataclass in `config.py` (`BOT_ENV`, `DISCORD_TOKEN`, `FIREBASE_*`, `GUILD_ID`, `TEST_GUILD_ID`).
+- **Feature Flags**: Stored per-guild in Firestore (e.g., `<name>_configs` collection).
+- Toggled via the central `/config` slash command hosted in `ConfigCog` (`src/lifeguard/cogs/config_cog.py`).
+- Every module must wire its sub-menu into the central config menu. Do not create separate command trees for feature enabling/disabling. Use `ConfigFeatureSelectView`.
+- Protected by decorators like `@require_<name>()` which raise `FeatureDisabledError` if disabled.
+
+## Coding Style
+- **Minimum Python**: 3.11
+- **Imports**: Every file must start with `from __future__ import annotations`. Follow with standard library, third-party, then local imports.
+- **Type Checking**: Use `if TYPE_CHECKING:` for import-only types (e.g., `from google.cloud.firestore import Client as FirestoreClient`).
+- **Type Hints**: Always annotate return types. Use modern union syntax (`User | None` instead of `Optional[User]`, `list[str]`).
+- **Logging**: Use standard logging `LOGGER = logging.getLogger(__name__)`.
+- **No Duplicate Logic**: Strict "no duplicate logic" principle. If the same check or transformation exists, extract it to a single reusable function.
+- **Single Source of Truth**: One canonical implementation for feature checks, validators, transformations, and error messages.
