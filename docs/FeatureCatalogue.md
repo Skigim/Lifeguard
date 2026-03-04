@@ -32,7 +32,7 @@ A robust ticketing and review system tailored for content ingestion and feedback
 * **Interactive Review Wizard:** Gives designated reviewers an interactive menu inside the ticket to add notes, rate content, require edits, or approve/publish the item.
 * **/close-ticket:** Specifically shuts down the active review ticket channel.
 * **/leaderboard:** Displays a ranking of the most active reviewers in the server.
-* **/review-profile:** Let a reviewer check their individual statistical stats and contribution history.
+* **/review-profile:** Let a reviewer check their individual statistics and contribution history.
 * **Sticky Navigation:** Persists important navigational buttons or menus at the bottom of active ticket channels so reviewers always have access to the controls.
 
 ---
