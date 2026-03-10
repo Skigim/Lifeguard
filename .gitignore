@@ -19,6 +19,7 @@ dashboard/firebase-config.js
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+tmp/
 
 # Packaging
 *.egg-info/
