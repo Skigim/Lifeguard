@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Protocol
 
 import discord
@@ -45,6 +46,7 @@ class SupportsContentReviewConfig(Protocol):
         interaction: discord.Interaction,
         *,
         disabled_view: discord.ui.View,
+        on_back_to_home: Callable[[discord.Interaction], Awaitable[None]],
     ) -> None: ...
 
     async def disable_feature(

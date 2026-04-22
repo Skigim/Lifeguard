@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -155,6 +156,7 @@ class ContentReviewCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
+        self._config_home_handler: Callable[[discord.Interaction], Awaitable[None]] | None = None
         self._pending_reviews: dict[str, ReviewWizardView] = {}
 
     @property
@@ -256,11 +258,13 @@ class ContentReviewCog(commands.Cog):
         interaction: discord.Interaction,
         *,
         disabled_view: discord.ui.View,
+        on_back_to_home: Callable[[discord.Interaction], Awaitable[None]],
     ) -> None:
         """Show the config menu or disabled placeholder for the shared shell."""
         if not interaction.guild:
             return
 
+        self._config_home_handler = on_back_to_home
         config = repo.get_config(self.firestore, interaction.guild.id)
         if not config or not config.enabled:
             embed = discord.Embed(
@@ -303,9 +307,20 @@ class ContentReviewCog(commands.Cog):
         )
         await interaction.response.edit_message(
             embed=embed,
-            view=ContentReviewConfigView(self),
+            view=ContentReviewConfigView(self, on_back_to_home=self._show_shared_config_home),
             content=None,
         )
+
+    async def _show_shared_config_home(
+        self, interaction: discord.Interaction
+    ) -> None:
+        """Return to the shared config shell from Content Review config UI."""
+        if self._config_home_handler is None:
+            await interaction.response.send_message(
+                "Configuration not available.", ephemeral=True
+            )
+            return
+        await self._config_home_handler(interaction)
 
     async def _show_sticky_menu(self, interaction: discord.Interaction) -> None:
         """Show nested sticky message configuration menu."""

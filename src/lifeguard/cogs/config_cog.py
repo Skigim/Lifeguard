@@ -331,6 +331,7 @@ class ConfigCog(commands.Cog):
         await cr_cog.show_config_menu(
             interaction,
             disabled_view=ContentReviewDisabledView(self),
+            on_back_to_home=self._show_config_home,
         )
 
     async def _show_voice_lobby_menu(self, interaction: discord.Interaction) -> None:

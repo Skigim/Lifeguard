@@ -6,6 +6,7 @@ time impersonator) now live in ``lifeguard.cogs.config_views``.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 import discord
@@ -46,9 +47,15 @@ class ContentReviewSetupView(discord.ui.View):
 class ContentReviewConfigView(discord.ui.View):
     """Config menu for Content Review feature."""
 
-    def __init__(self, cog: "ContentReviewCog") -> None:
+    def __init__(
+        self,
+        cog: "ContentReviewCog",
+        *,
+        on_back_to_home: Callable[[discord.Interaction], Awaitable[None]],
+    ) -> None:
         super().__init__(timeout=120)
         self.cog = cog
+        self._on_back_to_home = on_back_to_home
 
     @discord.ui.button(
         label="View Config", style=discord.ButtonStyle.secondary, emoji="📋", row=0
@@ -106,13 +113,7 @@ class ContentReviewConfigView(discord.ui.View):
     async def back_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        config_cog = self.cog.bot.get_cog("ConfigCog")
-        if config_cog:
-            await config_cog._show_config_home(interaction)
-        else:
-            await interaction.response.send_message(
-                "Configuration not available.", ephemeral=True
-            )
+        await self._on_back_to_home(interaction)
 
 
 class StickyConfigMenuView(discord.ui.View):

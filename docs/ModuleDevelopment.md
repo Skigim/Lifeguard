@@ -278,50 +278,19 @@ async def my_command(self, interaction: discord.Interaction) -> None:
 
 ### 5. Wiring into the Config Menu
 
-All feature management flows through the central `/config` command
-(hosted in `ConfigCog` at `cogs/config_cog.py`). Every module gets its own sub-menu
-so users can enable, disable, and configure the feature from one place.
+All feature management still starts from the central `/config` command,
+but `ConfigCog` should stay a thin router. Feature-specific config behavior
+belongs in the feature cog, not in `cogs/config_cog.py` or
+`cogs/config_views.py`.
 
-#### a) Create a config sub-menu view
+Use this split of responsibilities:
 
-Add your view to `cogs/config_views.py`:
+1. `ConfigFeatureSelectView` exposes the feature entrypoint.
+2. `ConfigCog` resolves the feature cog and delegates.
+3. The feature cog owns status, enable, disable, setup, and custom config flows.
+4. Feature-specific views stay under `modules/<name>/views/`.
 
-```python
-class <Name>ConfigView(discord.ui.View):
-    """Config sub-menu for <Name> feature."""
-
-    def __init__(self, cog: "ConfigCog") -> None:
-        super().__init__(timeout=120)
-        self.cog = cog
-
-    @discord.ui.button(label="Status", style=discord.ButtonStyle.secondary, emoji="📋", row=0)
-    async def status_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await self.cog._show_<name>_status(interaction)
-
-    @discord.ui.button(label="Enable", style=discord.ButtonStyle.success, emoji="✅", row=0)
-    async def enable_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await self.cog._enable_<name>(interaction)
-
-    @discord.ui.button(label="Disable", style=discord.ButtonStyle.danger, emoji="❌", row=0)
-    async def disable_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await self.cog._disable_<name>(interaction)
-
-    # Add more buttons for module-specific settings as needed
-
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1)
-    async def back_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await self.cog._show_config_home(interaction)
-```
-
-#### b) Add a button to `ConfigFeatureSelectView`
+#### a) Add the feature to the shared menu
 
 ```python
 @discord.ui.button(
@@ -336,63 +305,104 @@ async def <name>_button(
     await self.cog._show_<name>_menu(interaction)
 ```
 
-#### c) Add cog helper methods to `ConfigCog`
+#### b) Define a feature-facing interface when needed
+
+If the shared shell needs to call feature-owned config operations, add or
+implement a protocol in `lifeguard/feature_interfaces.py`.
+
+```python
+class SupportsConfigToggle(Protocol):
+    async def show_config_status(
+        self,
+        interaction: discord.Interaction,
+        *,
+        view: discord.ui.View,
+    ) -> None: ...
+
+    async def enable_feature(
+        self,
+        interaction: discord.Interaction,
+        *,
+        use_send: bool = False,
+    ) -> None: ...
+
+    async def disable_feature(
+        self,
+        interaction: discord.Interaction,
+        *,
+        use_send: bool = False,
+    ) -> None: ...
+```
+
+Define a feature-specific protocol instead when the module needs richer setup
+or navigation hooks.
+
+#### c) Keep `ConfigCog` focused on delegation
 
 ```python
 async def _show_<name>_menu(self, interaction: discord.Interaction) -> None:
-    from lifeguard.cogs.config_views import <Name>ConfigView
+    feature_cog = self._get_<name>_cog()
+    if feature_cog is None:
+        await interaction.response.edit_message(
+            content="<Name> module is not loaded.",
+            embed=None,
+            view=None,
+        )
+        return
 
-    embed = discord.Embed(
-        title="🔧 <Name> Config",
-        description="Configure the <Name> feature.",
-        color=discord.Color.blue(),
-    )
-    await interaction.response.edit_message(
-        embed=embed, view=<Name>ConfigView(self), content=None
+    await feature_cog.show_config_menu(
+        interaction,
+        on_back_to_home=self._show_config_home,
     )
 
 async def _show_<name>_status(self, interaction: discord.Interaction) -> None:
-    if not interaction.guild:
+    feature_cog = self._get_<name>_cog()
+    if feature_cog is None:
+        await interaction.response.edit_message(
+            content="<Name> module is not loaded.",
+            embed=None,
+            view=None,
+        )
         return
-    from lifeguard.modules.<name> import repo as <name>_repo
-    from lifeguard.cogs.config_views import <Name>ConfigView
 
-    config = <name>_repo.get_config(self.firestore, interaction.guild.id)
-    status = "✅ Enabled" if config and config.enabled else "❌ Disabled"
-    await interaction.response.edit_message(
-        content=f"**<Name>:** {status}", embed=None, view=<Name>ConfigView(self)
+    await feature_cog.show_config_status(
+        interaction,
+        view=<Name>ConfigView(self),
     )
-
-async def _enable_<name>(
-    self, interaction: discord.Interaction, *, use_send: bool = False
-) -> None:
-    if not interaction.guild:
-        return
-    from lifeguard.modules.<name> import repo as <name>_repo
-    from lifeguard.modules.<name>.config import <Name>Config
-
-    config = <Name>Config(guild_id=interaction.guild.id, enabled=True)
-    <name>_repo.save_config(self.firestore, config)
-    await self._respond(interaction, "✅ **<Name> enabled!**", use_send=use_send)
-
-async def _disable_<name>(
-    self, interaction: discord.Interaction, *, use_send: bool = False
-) -> None:
-    if not interaction.guild:
-        return
-    from lifeguard.modules.<name> import repo as <name>_repo
-    from lifeguard.modules.<name>.config import <Name>Config
-
-    config = <name>_repo.get_config(self.firestore, interaction.guild.id)
-    if not config or not config.enabled:
-        await self._respond(interaction, "<Name> is not enabled.", use_send=use_send)
-        return
-    config = <Name>Config(guild_id=interaction.guild.id, enabled=False)
-    <name>_repo.save_config(self.firestore, config)
-    await self._respond(interaction, "✅ **<Name> disabled!**", use_send=use_send)
 ```
 
-#### d) Register in the feature registry
+`ConfigCog` can still own shared, generic views. It should not directly import a
+feature repo or implement feature-specific persistence logic.
+
+#### d) Keep feature UI inside the feature module
+
+If the feature needs a custom sub-menu or nested views, keep them under
+`modules/<name>/views/` and route back-navigation through callbacks or methods
+provided by the feature cog.
+
+```python
+class <Name>ConfigView(discord.ui.View):
+    def __init__(
+        self,
+        cog: "<Name>Cog",
+        *,
+        on_back_to_home: Callable[[discord.Interaction], Awaitable[None]],
+    ) -> None:
+        super().__init__(timeout=120)
+        self.cog = cog
+        self._on_back_to_home = on_back_to_home
+
+    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️")
+    async def back_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self._on_back_to_home(interaction)
+```
+
+Feature views may call their own feature cog, but they should not resolve
+`ConfigCog` or any other feature cog directly.
+
+#### e) Register in the feature registry
 
 Add your feature to the `FEATURES` list in `cogs/config_cog.py` so `enable-feature`
 and `disable-feature` autocomplete picks it up:
