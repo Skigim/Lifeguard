@@ -18,7 +18,6 @@ src/lifeguard/
 │   └── config_views.py  # Cross-cutting config UI views
 ├── db/                  # SQLAlchemy layer (legacy/unused)
 └── modules/             # Feature modules
-    ├── albion/           # Albion Online integration
     ├── content_review/   # Submission review system
     ├── time_impersonator/# Dynamic Discord timestamps via webhook
     └── voice_lobby/      # Temporary voice channels from entry channel
@@ -84,8 +83,7 @@ hosted in `ConfigCog` (`cogs/config_cog.py`). The menu hierarchy:
 ├── General Settings        → Bot admin roles
 ├── Content Review          → Enable/disable, sticky, roles, form, settings
 ├── Time Impersonator       → Enable/disable, status
-├── Voice Lobby             → Enable/disable, entry channel, defaults, roles
-└── Albion Features         → Enable/disable prices & builds, status
+└── Voice Lobby             → Enable/disable, entry channel, defaults, roles
 ```
 
 ### Key principles
@@ -118,5 +116,5 @@ Guild-level feature toggles stored in Firestore:
 - Repository pattern for data access
 
 ### Legacy: SQLAlchemy (`db/`)
-- Originally planned for Albion data
+- Originally planned for legacy relational data storage
 - Currently unused - kept for potential future use

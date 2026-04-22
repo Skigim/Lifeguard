@@ -12,7 +12,7 @@ class Player(Base):
     __tablename__ = "players"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    albion_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    external_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(64), index=True)
 
     guild_id: Mapped[int | None] = mapped_column(ForeignKey("guilds.id"), nullable=True)
@@ -23,7 +23,7 @@ class Guild(Base):
     __tablename__ = "guilds"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    albion_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    external_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(128), index=True)
 
     alliance_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -44,7 +44,7 @@ class Item(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
-    # Albion item type string, e.g. T8_2H_DUALSWORD@2
+    # External item type string, e.g. T8_2H_DUALSWORD@2
     item_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
 
     # Optional human label (if you later load metadata dumps)

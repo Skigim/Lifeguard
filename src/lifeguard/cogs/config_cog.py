@@ -15,8 +15,6 @@ from discord import app_commands
 from discord.ext import commands
 
 from lifeguard.cogs.config_views import (
-    AlbionConfigView,
-    BackToAlbionView,
     BackToGeneralView,
     ConfigFeatureSelectView,
     ContentReviewDisabledView,
@@ -25,7 +23,11 @@ from lifeguard.cogs.config_views import (
     TimeImpersonatorConfigView,
     VoiceLobbyConfigView,
 )
-from lifeguard.modules.albion import repo as albion_repo
+from lifeguard.guild_settings import (
+    get_guild_settings,
+    get_or_create_guild_settings,
+    save_guild_settings,
+)
 
 if TYPE_CHECKING:
     from google.cloud.firestore import Client as FirestoreClient
@@ -37,8 +39,6 @@ _MSG_SERVER_ONLY = "Server only."
 _MSG_NO_PERMISSION = "You don't have permission to manage bot settings."
 _STATUS_ENABLED = "✅ Enabled"
 _STATUS_DISABLED = "❌ Disabled"
-_FEATURE_ALBION_PRICES = "Albion Price Lookup"
-_FEATURE_ALBION_BUILDS = "Albion Builds"
 _FEATURE_CONTENT_REVIEW = "Content Review"
 _FEATURE_VOICE_LOBBY = "Voice Lobby"
 
@@ -63,8 +63,6 @@ FEATURES: list[tuple[str, str, str, bool]] = [
         "Temporary voice lobbies created from an entry channel",
         False,
     ),
-    ("albion_prices", "Albion Prices", "Look up Albion Online market prices", False),
-    ("albion_builds", "Albion Builds", "Share and browse Albion Online builds", False),
 ]
 
 
@@ -139,12 +137,12 @@ class ConfigCog(commands.Cog):
         if interaction.user.guild_permissions.administrator:
             return True
 
-        features = albion_repo.get_guild_features(self.firestore, interaction.guild.id)
-        if not features or not features.bot_admin_role_ids:
+        settings = get_guild_settings(self.firestore, interaction.guild.id)
+        if not settings or not settings.bot_admin_role_ids:
             return False
 
         user_role_ids = {role.id for role in interaction.user.roles}
-        return bool(user_role_ids & set(features.bot_admin_role_ids))
+        return bool(user_role_ids & set(settings.bot_admin_role_ids))
 
     # ------------------------------------------------------------------
     # Slash commands
@@ -208,10 +206,6 @@ class ConfigCog(commands.Cog):
             await self._enable_time_impersonator(interaction, use_send=True)
         elif feature == "voice_lobby":
             await self._enable_voice_lobby(interaction, use_send=True)
-        elif feature == "albion_prices":
-            await self._enable_albion_feature(interaction, "prices", use_send=True)
-        elif feature == "albion_builds":
-            await self._enable_albion_feature(interaction, "builds", use_send=True)
 
     @app_commands.command(
         name="disable-feature",
@@ -246,10 +240,6 @@ class ConfigCog(commands.Cog):
             await self._disable_time_impersonator_direct(interaction)
         elif feature == "voice_lobby":
             await self._disable_voice_lobby_direct(interaction)
-        elif feature == "albion_prices":
-            await self._disable_albion_feature_direct(interaction, "prices")
-        elif feature == "albion_builds":
-            await self._disable_albion_feature_direct(interaction, "builds")
 
     @app_commands.command(
         name="config",
@@ -284,14 +274,6 @@ class ConfigCog(commands.Cog):
         return discord.Embed(
             title="⚙️ General Settings",
             description="Use the buttons below to configure general bot settings.",
-            color=discord.Color.blue(),
-        )
-
-    @staticmethod
-    def _build_albion_embed() -> discord.Embed:
-        return discord.Embed(
-            title="⚔️ Albion Config",
-            description="Use the buttons below to configure Albion features.",
             color=discord.Color.blue(),
         )
 
@@ -364,13 +346,6 @@ class ConfigCog(commands.Cog):
                 embed=None,
                 view=None,
             )
-
-    async def _show_albion_menu(self, interaction: discord.Interaction) -> None:
-        await interaction.response.edit_message(
-            embed=self._build_albion_embed(),
-            view=AlbionConfigView(self),
-            content=None,
-        )
 
     async def _show_voice_lobby_menu(self, interaction: discord.Interaction) -> None:
         await interaction.response.edit_message(
@@ -841,154 +816,6 @@ class ConfigCog(commands.Cog):
         )
 
     # ------------------------------------------------------------------
-    # Albion enable/disable
-    # ------------------------------------------------------------------
-
-    async def _enable_albion_feature(
-        self,
-        interaction: discord.Interaction,
-        feature: str,
-        *,
-        use_send: bool = False,
-    ) -> None:
-        if not interaction.guild:
-            return
-
-        features = albion_repo.get_or_create_guild_features(
-            self.firestore, interaction.guild.id
-        )
-
-        if feature == "prices":
-            features.albion_prices_enabled = True
-            feature_name = _FEATURE_ALBION_PRICES
-        else:
-            features.albion_builds_enabled = True
-            feature_name = _FEATURE_ALBION_BUILDS
-
-        albion_repo.save_guild_features(self.firestore, features)
-
-        await self._respond(
-            interaction,
-            f"✅ **{feature_name} enabled!**\n\nUsers can now use the related commands.",
-            use_send=use_send,
-        )
-        LOGGER.info("Albion %s enabled: guild=%s", feature, interaction.guild.id)
-
-    async def _disable_albion_feature(
-        self, interaction: discord.Interaction, feature: str
-    ) -> None:
-        """Disable an Albion feature (from config menu — uses edit_message)."""
-        if not interaction.guild:
-            return
-
-        features = albion_repo.get_guild_features(self.firestore, interaction.guild.id)
-        if not features:
-            await interaction.response.edit_message(
-                content="No Albion features are currently enabled.",
-                embed=None,
-                view=None,
-            )
-            return
-
-        if feature == "prices":
-            if not features.albion_prices_enabled:
-                await interaction.response.edit_message(
-                    content=f"{_FEATURE_ALBION_PRICES} is not currently enabled.",
-                    embed=None,
-                    view=None,
-                )
-                return
-            features.albion_prices_enabled = False
-            feature_name = _FEATURE_ALBION_PRICES
-        else:
-            if not features.albion_builds_enabled:
-                await interaction.response.edit_message(
-                    content=f"{_FEATURE_ALBION_BUILDS} is not currently enabled.",
-                    embed=None,
-                    view=None,
-                )
-                return
-            features.albion_builds_enabled = False
-            feature_name = _FEATURE_ALBION_BUILDS
-
-        albion_repo.save_guild_features(self.firestore, features)
-
-        await interaction.response.edit_message(
-            content=f"✅ **{feature_name} disabled!**",
-            embed=None,
-            view=None,
-        )
-        LOGGER.info("Albion %s disabled: guild=%s", feature, interaction.guild.id)
-
-    async def _disable_albion_feature_direct(
-        self, interaction: discord.Interaction, feature: str
-    ) -> None:
-        """Disable an Albion feature (direct command — uses send_message)."""
-        if not interaction.guild:
-            return
-
-        features = albion_repo.get_guild_features(self.firestore, interaction.guild.id)
-        if not features:
-            await interaction.response.send_message(
-                "No Albion features are currently configured.", ephemeral=True
-            )
-            return
-
-        if feature == "prices":
-            if not features.albion_prices_enabled:
-                await interaction.response.send_message(
-                    f"{_FEATURE_ALBION_PRICES} is not currently enabled.",
-                    ephemeral=True,
-                )
-                return
-            features.albion_prices_enabled = False
-            feature_name = _FEATURE_ALBION_PRICES
-        else:
-            if not features.albion_builds_enabled:
-                await interaction.response.send_message(
-                    f"{_FEATURE_ALBION_BUILDS} is not currently enabled.",
-                    ephemeral=True,
-                )
-                return
-            features.albion_builds_enabled = False
-            feature_name = _FEATURE_ALBION_BUILDS
-
-        albion_repo.save_guild_features(self.firestore, features)
-
-        await interaction.response.send_message(
-            f"✅ **{feature_name} disabled!**", ephemeral=True
-        )
-        LOGGER.info("Albion %s disabled: guild=%s", feature, interaction.guild.id)
-
-    async def _show_albion_status(self, interaction: discord.Interaction) -> None:
-        if not interaction.guild:
-            return
-
-        features = albion_repo.get_guild_features(self.firestore, interaction.guild.id)
-
-        prices_status = (
-            _STATUS_ENABLED
-            if features and features.albion_prices_enabled
-            else _STATUS_DISABLED
-        )
-        builds_status = (
-            _STATUS_ENABLED
-            if features and features.albion_builds_enabled
-            else _STATUS_DISABLED
-        )
-
-        embed = discord.Embed(
-            title="⚔️ Albion Features Status",
-            color=discord.Color.blue(),
-        )
-        embed.add_field(name="💰 Price Lookup", value=prices_status, inline=True)
-        embed.add_field(name="⚔️ Builds", value=builds_status, inline=True)
-
-        await interaction.response.edit_message(
-            embed=embed, view=BackToAlbionView(self)
-        )
-
-    # ------------------------------------------------------------------
     # Bot Admin Role helpers
     # ------------------------------------------------------------------
 
@@ -996,8 +823,8 @@ class ConfigCog(commands.Cog):
         if not interaction.guild:
             return
 
-        features = albion_repo.get_guild_features(self.firestore, interaction.guild.id)
-        role_ids = features.bot_admin_role_ids if features else []
+        settings = get_guild_settings(self.firestore, interaction.guild.id)
+        role_ids = settings.bot_admin_role_ids if settings else []
 
         if not role_ids:
             embed = discord.Embed(
@@ -1037,11 +864,9 @@ class ConfigCog(commands.Cog):
         if not interaction.guild:
             return
 
-        features = albion_repo.get_or_create_guild_features(
-            self.firestore, interaction.guild.id
-        )
+        settings = get_or_create_guild_settings(self.firestore, interaction.guild.id)
 
-        if role.id in features.bot_admin_role_ids:
+        if role.id in settings.bot_admin_role_ids:
             await self._respond(
                 interaction,
                 f"{role.mention} is already a bot admin role.",
@@ -1049,8 +874,8 @@ class ConfigCog(commands.Cog):
             )
             return
 
-        features.bot_admin_role_ids.append(role.id)
-        albion_repo.save_guild_features(self.firestore, features)
+        settings.bot_admin_role_ids.append(role.id)
+        save_guild_settings(self.firestore, settings)
 
         await self._respond(
             interaction,
@@ -1065,14 +890,14 @@ class ConfigCog(commands.Cog):
         if not interaction.guild:
             return
 
-        features = albion_repo.get_guild_features(self.firestore, interaction.guild.id)
-        if not features or not features.bot_admin_role_ids:
+        settings = get_guild_settings(self.firestore, interaction.guild.id)
+        if not settings or not settings.bot_admin_role_ids:
             await interaction.response.edit_message(
                 content="No bot admin roles configured.", embed=None, view=None
             )
             return
 
-        view = RemoveBotAdminRoleView(self, features.bot_admin_role_ids)
+        view = RemoveBotAdminRoleView(self, settings.bot_admin_role_ids)
         await interaction.response.edit_message(
             content="Select a role to remove from bot admin roles:",
             embed=None,
@@ -1089,8 +914,8 @@ class ConfigCog(commands.Cog):
         if not interaction.guild:
             return
 
-        features = albion_repo.get_guild_features(self.firestore, interaction.guild.id)
-        if not features or role.id not in features.bot_admin_role_ids:
+        settings = get_guild_settings(self.firestore, interaction.guild.id)
+        if not settings or role.id not in settings.bot_admin_role_ids:
             await self._respond(
                 interaction,
                 f"{role.mention} is not a bot admin role.",
@@ -1098,8 +923,8 @@ class ConfigCog(commands.Cog):
             )
             return
 
-        features.bot_admin_role_ids.remove(role.id)
-        albion_repo.save_guild_features(self.firestore, features)
+        settings.bot_admin_role_ids.remove(role.id)
+        save_guild_settings(self.firestore, settings)
 
         await self._respond(
             interaction,
@@ -1114,15 +939,15 @@ class ConfigCog(commands.Cog):
         if not interaction.guild:
             return
 
-        features = albion_repo.get_guild_features(self.firestore, interaction.guild.id)
-        if not features or not features.bot_admin_role_ids:
+        settings = get_guild_settings(self.firestore, interaction.guild.id)
+        if not settings or not settings.bot_admin_role_ids:
             await interaction.response.edit_message(
                 content="No bot admin roles to clear.", embed=None, view=None
             )
             return
 
-        features.bot_admin_role_ids = []
-        albion_repo.save_guild_features(self.firestore, features)
+        settings.bot_admin_role_ids = []
+        save_guild_settings(self.firestore, settings)
 
         await interaction.response.edit_message(
             content="✅ Cleared all bot admin roles. Only Discord admins can manage the bot now.",

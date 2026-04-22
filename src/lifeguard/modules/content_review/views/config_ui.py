@@ -1,6 +1,6 @@
 """Config UI views and modals for the Content Review module.
 
-Cross-cutting views (config home, general settings, voice lobby, albion,
+Cross-cutting views (config home, general settings, voice lobby,
 time impersonator) now live in ``lifeguard.cogs.config_views``.
 """
 
