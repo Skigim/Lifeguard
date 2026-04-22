@@ -8,7 +8,7 @@ owning module's cog when needed (e.g. Content Review setup).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import discord
 from discord import app_commands
@@ -30,6 +30,11 @@ from lifeguard.guild_settings import (
 )
 
 if TYPE_CHECKING:
+    from lifeguard.feature_interfaces import (
+        SupportsConfigToggle,
+        SupportsContentReviewConfig,
+        SupportsVoiceLobbyConfig,
+    )
     from google.cloud.firestore import Client as FirestoreClient
 
 LOGGER = logging.getLogger(__name__)
@@ -37,6 +42,9 @@ LOGGER = logging.getLogger(__name__)
 # --- Common Response Strings ---
 _MSG_SERVER_ONLY = "Server only."
 _MSG_NO_PERMISSION = "You don't have permission to manage bot settings."
+_MSG_CONTENT_REVIEW_NOT_LOADED = "Content Review module is not loaded."
+_MSG_TIME_IMPERSONATOR_NOT_LOADED = "Time Impersonator module is not loaded."
+_MSG_VOICE_LOBBY_NOT_LOADED = "Voice Lobby module is not loaded."
 _STATUS_ENABLED = "✅ Enabled"
 _STATUS_DISABLED = "❌ Disabled"
 _FEATURE_CONTENT_REVIEW = "Content Review"
@@ -110,6 +118,15 @@ class ConfigCog(commands.Cog):
     def firestore(self) -> FirestoreClient:
         return self.bot.lifeguard_firestore  # type: ignore[attr-defined]
 
+    def _get_time_impersonator_cog(self) -> "SupportsConfigToggle | None":
+        return cast("SupportsConfigToggle | None", self.bot.get_cog("TimeImpersonatorCog"))
+
+    def _get_content_review_cog(self) -> "SupportsContentReviewConfig | None":
+        return cast("SupportsContentReviewConfig | None", self.bot.get_cog("ContentReviewCog"))
+
+    def _get_voice_lobby_cog(self) -> "SupportsVoiceLobbyConfig | None":
+        return cast("SupportsVoiceLobbyConfig | None", self.bot.get_cog("VoiceLobbyCog"))
+
     # ------------------------------------------------------------------
     # Shared helpers
     # ------------------------------------------------------------------
@@ -177,28 +194,13 @@ class ConfigCog(commands.Cog):
 
         # Features requiring setup show a wizard view
         if _feature_requires_setup(feature) and feature == "content_review":
-            cr_cog = self.bot.get_cog("ContentReviewCog")
+            cr_cog = self._get_content_review_cog()
             if not cr_cog:
                 await interaction.response.send_message(
-                    "Content Review module is not loaded.", ephemeral=True
+                    _MSG_CONTENT_REVIEW_NOT_LOADED, ephemeral=True
                 )
                 return
-            from lifeguard.modules.content_review.views.config_ui import (
-                ContentReviewSetupView,
-            )
-
-            view = ContentReviewSetupView(cr_cog)
-            embed = discord.Embed(
-                title="📝 Content Review Setup",
-                description=(
-                    "Select the **ticket category** where review channels will be created.\n\n"
-                    "The submit button will be posted in the current channel."
-                ),
-                color=discord.Color.blue(),
-            )
-            await interaction.response.send_message(
-                embed=embed, view=view, ephemeral=True
-            )
+            await cr_cog.show_setup(interaction, use_send=True)
             return
 
         # Simple features enable directly
@@ -317,35 +319,19 @@ class ConfigCog(commands.Cog):
 
         Delegates to ContentReviewCog for CR-specific config when enabled.
         """
-        if not interaction.guild:
-            return
-
-        from lifeguard.modules.content_review import repo
-
-        config = repo.get_config(self.firestore, interaction.guild.id)
-        if not config or not config.enabled:
-            embed = discord.Embed(
-                title="📝 Content Review",
-                description="Content Review is **not enabled**. Enable it to get started.",
-                color=discord.Color.greyple(),
-            )
+        cr_cog = self._get_content_review_cog()
+        if cr_cog is None:
             await interaction.response.edit_message(
-                embed=embed,
-                view=ContentReviewDisabledView(self),
-                content=None,
-            )
-            return
-
-        # Delegate to CR cog for the full config menu
-        cr_cog = self.bot.get_cog("ContentReviewCog")
-        if cr_cog:
-            await cr_cog._show_content_review_config(interaction)
-        else:
-            await interaction.response.edit_message(
-                content="Content Review module is not loaded.",
+                content=_MSG_CONTENT_REVIEW_NOT_LOADED,
                 embed=None,
                 view=None,
             )
+            return
+
+        await cr_cog.show_config_menu(
+            interaction,
+            disabled_view=ContentReviewDisabledView(self),
+        )
 
     async def _show_voice_lobby_menu(self, interaction: discord.Interaction) -> None:
         await interaction.response.edit_message(
@@ -371,17 +357,16 @@ class ConfigCog(commands.Cog):
     async def _show_time_impersonator_status(
         self, interaction: discord.Interaction
     ) -> None:
-        if not interaction.guild:
+        cog = self._get_time_impersonator_cog()
+        if cog is None:
+            await interaction.response.edit_message(
+                content=_MSG_TIME_IMPERSONATOR_NOT_LOADED,
+                embed=None,
+                view=None,
+            )
             return
-
-        from lifeguard.modules.time_impersonator import repo as ti_repo
-
-        config = ti_repo.get_config(self.firestore, interaction.guild.id)
-        status = _STATUS_ENABLED if config and config.enabled else _STATUS_DISABLED
-
-        await interaction.response.edit_message(
-            content=f"**Time Impersonator:** {status}",
-            embed=None,
+        await cog.show_config_status(
+            interaction,
             view=TimeImpersonatorConfigView(self),
         )
 
@@ -395,24 +380,14 @@ class ConfigCog(commands.Cog):
         *,
         use_send: bool = False,
     ) -> None:
-        if not interaction.guild:
+        cog = self._get_time_impersonator_cog()
+        if cog is None:
+            await interaction.response.send_message(
+                _MSG_TIME_IMPERSONATOR_NOT_LOADED,
+                ephemeral=True,
+            )
             return
-
-        from lifeguard.modules.time_impersonator import repo as ti_repo
-        from lifeguard.modules.time_impersonator.config import TimeImpersonatorConfig
-
-        config = TimeImpersonatorConfig(guild_id=interaction.guild.id, enabled=True)
-        ti_repo.save_config(self.firestore, config)
-
-        content = (
-            "✅ **Time Impersonator enabled!**\n\n"
-            "Users can now:\n"
-            "• `/tz set` — Set their timezone\n"
-            "• `/time` — Send messages with dynamic timestamps\n\n"
-            "The bot needs **Manage Webhooks** permission in channels where `/time` is used."
-        )
-        await self._respond(interaction, content, use_send=use_send)
-        LOGGER.info("Time Impersonator enabled: guild=%s", interaction.guild.id)
+        await cog.enable_feature(interaction, use_send=use_send)
 
     async def _disable_time_impersonator(
         self,
@@ -420,26 +395,14 @@ class ConfigCog(commands.Cog):
         *,
         use_send: bool = False,
     ) -> None:
-        if not interaction.guild:
-            return
-
-        from lifeguard.modules.time_impersonator import repo as ti_repo
-        from lifeguard.modules.time_impersonator.config import TimeImpersonatorConfig
-
-        config = ti_repo.get_config(self.firestore, interaction.guild.id)
-        if not config or not config.enabled:
-            await self._respond(
-                interaction, "Time Impersonator is not enabled.", use_send=use_send
+        cog = self._get_time_impersonator_cog()
+        if cog is None:
+            await interaction.response.send_message(
+                _MSG_TIME_IMPERSONATOR_NOT_LOADED,
+                ephemeral=True,
             )
             return
-
-        config = TimeImpersonatorConfig(guild_id=interaction.guild.id, enabled=False)
-        ti_repo.save_config(self.firestore, config)
-
-        await self._respond(
-            interaction, "✅ **Time Impersonator disabled!**", use_send=use_send
-        )
-        LOGGER.info("Time Impersonator disabled: guild=%s", interaction.guild.id)
+        await cog.disable_feature(interaction, use_send=use_send)
 
     async def _disable_time_impersonator_direct(
         self, interaction: discord.Interaction
@@ -456,26 +419,14 @@ class ConfigCog(commands.Cog):
         *,
         use_send: bool = False,
     ) -> None:
-        if not interaction.guild:
+        cog = self._get_voice_lobby_cog()
+        if cog is None:
+            await interaction.response.send_message(
+                _MSG_VOICE_LOBBY_NOT_LOADED,
+                ephemeral=True,
+            )
             return
-
-        from lifeguard.modules.voice_lobby import repo as voice_repo
-        from lifeguard.modules.voice_lobby.config import VoiceLobbyConfig
-
-        existing = voice_repo.get_config(self.firestore, interaction.guild.id)
-        if existing is None:
-            config = VoiceLobbyConfig(guild_id=interaction.guild.id, enabled=True)
-        else:
-            existing.enabled = True
-            config = existing
-
-        voice_repo.save_config(self.firestore, config)
-
-        content = (
-            f"✅ **{_FEATURE_VOICE_LOBBY} enabled!**\n\n"
-            "Next step: open `/config` → **Voice Lobby** to set entry channel, defaults, and role rules."
-        )
-        await self._respond(interaction, content, use_send=use_send)
+        await cog.enable_feature(interaction, use_send=use_send)
 
     async def _disable_voice_lobby(
         self,
@@ -483,28 +434,14 @@ class ConfigCog(commands.Cog):
         *,
         use_send: bool = False,
     ) -> None:
-        if not interaction.guild:
-            return
-
-        from lifeguard.modules.voice_lobby import repo as voice_repo
-
-        config = voice_repo.get_config(self.firestore, interaction.guild.id)
-        if not config or not config.enabled:
-            await self._respond(
-                interaction,
-                f"{_FEATURE_VOICE_LOBBY} is not enabled.",
-                use_send=use_send,
+        cog = self._get_voice_lobby_cog()
+        if cog is None:
+            await interaction.response.send_message(
+                _MSG_VOICE_LOBBY_NOT_LOADED,
+                ephemeral=True,
             )
             return
-
-        config.enabled = False
-        voice_repo.save_config(self.firestore, config)
-
-        await self._respond(
-            interaction,
-            f"✅ **{_FEATURE_VOICE_LOBBY} disabled!**",
-            use_send=use_send,
-        )
+        await cog.disable_feature(interaction, use_send=use_send)
 
     async def _disable_voice_lobby_direct(
         self, interaction: discord.Interaction
@@ -522,73 +459,31 @@ class ConfigCog(commands.Cog):
         return ", ".join(mentions)
 
     async def _show_voice_lobby_status(self, interaction: discord.Interaction) -> None:
-        if not interaction.guild:
-            return
-
-        from lifeguard.modules.voice_lobby import repo as voice_repo
-
-        config = voice_repo.get_config(self.firestore, interaction.guild.id)
-        if config is None:
+        cog = self._get_voice_lobby_cog()
+        if cog is None:
             await interaction.response.edit_message(
-                content=(
-                    "Voice lobby is not configured yet.\n"
-                    "Use **Entry Channel** and **Defaults** to configure it."
-                ),
+                content=_MSG_VOICE_LOBBY_NOT_LOADED,
                 embed=None,
-                view=VoiceLobbyConfigView(self),
+                view=None,
             )
             return
-
-        if config.entry_voice_channel_id is None:
-            entry_label = "Not set"
-        else:
-            entry_channel = interaction.guild.get_channel(config.entry_voice_channel_id)
-            if isinstance(entry_channel, discord.VoiceChannel):
-                entry_label = entry_channel.mention
-            else:
-                entry_label = f"Missing({config.entry_voice_channel_id})"
-
-        if config.lobby_category_id is None:
-            category_label = "Same category as entry channel"
-        else:
-            category = interaction.guild.get_channel(config.lobby_category_id)
-            if isinstance(category, discord.CategoryChannel):
-                category_label = category.mention
-            else:
-                category_label = f"Missing({config.lobby_category_id})"
-
-        await interaction.response.edit_message(
-            content=(
-                f"Enabled: **{'Yes' if config.enabled else 'No'}**\n"
-                f"Entry channel: {entry_label}\n"
-                f"Lobby category: {category_label}\n"
-                f"Default user limit: **{config.default_user_limit}**\n"
-                f"Name template: `{config.name_template}`\n"
-                f"Create roles: {self._format_voice_role_mentions(interaction.guild, config.creator_role_ids)}\n"
-                f"Join roles: {self._format_voice_role_mentions(interaction.guild, config.join_role_ids)}"
-            ),
-            embed=None,
-            view=VoiceLobbyConfigView(self),
-        )
+        await cog.show_config_status(interaction, view=VoiceLobbyConfigView(self))
 
     async def _set_voice_lobby_entry_channel(
         self,
         interaction: discord.Interaction,
         entry_channel: discord.VoiceChannel,
     ) -> None:
-        if not interaction.guild:
+        cog = self._get_voice_lobby_cog()
+        if cog is None:
+            await interaction.response.send_message(
+                _MSG_VOICE_LOBBY_NOT_LOADED,
+                ephemeral=True,
+            )
             return
-
-        from lifeguard.modules.voice_lobby import repo as voice_repo
-
-        config = voice_repo.get_or_create_config(self.firestore, interaction.guild.id)
-        config.enabled = True
-        config.entry_voice_channel_id = entry_channel.id
-        voice_repo.save_config(self.firestore, config)
-
-        await interaction.response.edit_message(
-            content=f"✅ Entry voice channel set to {entry_channel.mention}.",
-            embed=None,
+        await cog.set_entry_channel(
+            interaction,
+            entry_channel,
             view=VoiceLobbyConfigView(self),
         )
 
@@ -597,24 +492,16 @@ class ConfigCog(commands.Cog):
         interaction: discord.Interaction,
         category: discord.CategoryChannel | None,
     ) -> None:
-        if not interaction.guild:
+        cog = self._get_voice_lobby_cog()
+        if cog is None:
+            await interaction.response.send_message(
+                _MSG_VOICE_LOBBY_NOT_LOADED,
+                ephemeral=True,
+            )
             return
-
-        from lifeguard.modules.voice_lobby import repo as voice_repo
-
-        config = voice_repo.get_or_create_config(self.firestore, interaction.guild.id)
-        config.enabled = True
-        config.lobby_category_id = category.id if category else None
-        voice_repo.save_config(self.firestore, config)
-
-        if category is None:
-            content = "✅ Lobby category reset to **entry channel category**."
-        else:
-            content = f"✅ Lobby category set to {category.mention}."
-
-        await interaction.response.edit_message(
-            content=content,
-            embed=None,
+        await cog.set_category(
+            interaction,
+            category,
             view=VoiceLobbyConfigView(self),
         )
 
@@ -624,41 +511,14 @@ class ConfigCog(commands.Cog):
         name_template: str,
         default_user_limit: str,
     ) -> None:
-        if not interaction.guild:
-            return
-
-        from lifeguard.modules.voice_lobby import repo as voice_repo
-
-        try:
-            parsed_user_limit = int(default_user_limit)
-        except (TypeError, ValueError):
+        cog = self._get_voice_lobby_cog()
+        if cog is None:
             await interaction.response.send_message(
-                "Default user limit must be a number between 0 and 99.",
+                _MSG_VOICE_LOBBY_NOT_LOADED,
                 ephemeral=True,
             )
             return
-
-        if parsed_user_limit < 0 or parsed_user_limit > 99:
-            await interaction.response.send_message(
-                "Default user limit must be a number between 0 and 99.",
-                ephemeral=True,
-            )
-            return
-
-        config = voice_repo.get_or_create_config(self.firestore, interaction.guild.id)
-        config.enabled = True
-        config.name_template = name_template.strip() or "Lobby - {owner}"
-        config.default_user_limit = parsed_user_limit
-        voice_repo.save_config(self.firestore, config)
-
-        await interaction.response.send_message(
-            (
-                "✅ Voice lobby defaults saved.\n"
-                f"Template: `{config.name_template}`\n"
-                f"Default user limit: **{config.default_user_limit}**"
-            ),
-            ephemeral=True,
-        )
+        await cog.set_defaults(interaction, name_template, default_user_limit)
 
     async def _add_voice_role(
         self,
@@ -669,30 +529,19 @@ class ConfigCog(commands.Cog):
         label: str,
         return_view: discord.ui.View,
     ) -> None:
-        if not interaction.guild:
-            return
-
-        from lifeguard.modules.voice_lobby import repo as voice_repo
-
-        config = voice_repo.get_or_create_config(self.firestore, interaction.guild.id)
-        role_ids = getattr(config, field_name)
-        if role.id in role_ids:
-            await interaction.response.edit_message(
-                content=f"{role.mention} is already in {label} roles.",
-                embed=None,
-                view=return_view,
+        cog = self._get_voice_lobby_cog()
+        if cog is None:
+            await interaction.response.send_message(
+                _MSG_VOICE_LOBBY_NOT_LOADED,
+                ephemeral=True,
             )
             return
 
-        role_ids.append(role.id)
-        setattr(config, field_name, role_ids)
-        voice_repo.save_config(self.firestore, config)
+        if field_name == "creator_role_ids":
+            await cog.add_creator_role(interaction, role, view=return_view)
+            return
 
-        await interaction.response.edit_message(
-            content=f"✅ Added {role.mention} to {label} roles.",
-            embed=None,
-            view=return_view,
-        )
+        await cog.add_join_role(interaction, role, view=return_view)
 
     async def _remove_voice_role(
         self,
@@ -703,30 +552,19 @@ class ConfigCog(commands.Cog):
         label: str,
         return_view: discord.ui.View,
     ) -> None:
-        if not interaction.guild:
-            return
-
-        from lifeguard.modules.voice_lobby import repo as voice_repo
-
-        config = voice_repo.get_or_create_config(self.firestore, interaction.guild.id)
-        role_ids = getattr(config, field_name)
-        if role.id not in role_ids:
-            await interaction.response.edit_message(
-                content=f"{role.mention} is not in {label} roles.",
-                embed=None,
-                view=return_view,
+        cog = self._get_voice_lobby_cog()
+        if cog is None:
+            await interaction.response.send_message(
+                _MSG_VOICE_LOBBY_NOT_LOADED,
+                ephemeral=True,
             )
             return
 
-        role_ids.remove(role.id)
-        setattr(config, field_name, role_ids)
-        voice_repo.save_config(self.firestore, config)
+        if field_name == "creator_role_ids":
+            await cog.remove_creator_role(interaction, role, view=return_view)
+            return
 
-        await interaction.response.edit_message(
-            content=f"✅ Removed {role.mention} from {label} roles.",
-            embed=None,
-            view=return_view,
-        )
+        await cog.remove_join_role(interaction, role, view=return_view)
 
     async def _clear_voice_roles(
         self,
@@ -736,20 +574,19 @@ class ConfigCog(commands.Cog):
         label: str,
         return_view: discord.ui.View,
     ) -> None:
-        if not interaction.guild:
+        cog = self._get_voice_lobby_cog()
+        if cog is None:
+            await interaction.response.send_message(
+                "Voice Lobby module is not loaded.",
+                ephemeral=True,
+            )
             return
 
-        from lifeguard.modules.voice_lobby import repo as voice_repo
+        if field_name == "creator_role_ids":
+            await cog.clear_creator_roles(interaction, view=return_view)
+            return
 
-        config = voice_repo.get_or_create_config(self.firestore, interaction.guild.id)
-        setattr(config, field_name, [])
-        voice_repo.save_config(self.firestore, config)
-
-        await interaction.response.edit_message(
-            content=f"✅ Cleared {label} role restrictions.",
-            embed=None,
-            view=return_view,
-        )
+        await cog.clear_join_roles(interaction, view=return_view)
 
     async def _add_voice_lobby_creator_role(
         self, interaction: discord.Interaction, role: discord.Role
@@ -964,13 +801,13 @@ class ConfigCog(commands.Cog):
         self, interaction: discord.Interaction
     ) -> None:
         """Disable content review via /disable-feature command."""
-        cr_cog = self.bot.get_cog("ContentReviewCog")
+        cr_cog = self._get_content_review_cog()
         if not cr_cog:
             await interaction.response.send_message(
-                "Content Review module is not loaded.", ephemeral=True
+                _MSG_CONTENT_REVIEW_NOT_LOADED, ephemeral=True
             )
             return
-        await cr_cog._disable_content_review_feature(interaction, use_send=True)
+        await cr_cog.disable_feature(interaction, use_send=True)
 
 
 async def setup(bot: commands.Bot) -> None:

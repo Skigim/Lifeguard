@@ -60,6 +60,383 @@ class VoiceLobbyCog(commands.Cog):
     def firestore(self) -> FirestoreClient:
         return self.bot.lifeguard_firestore  # type: ignore[attr-defined]
 
+    async def enable_feature(
+        self,
+        interaction: discord.Interaction,
+        *,
+        use_send: bool = False,
+    ) -> None:
+        """Enable the feature from the shared config shell."""
+        if not interaction.guild:
+            return
+
+        existing = repo.get_config(self.firestore, interaction.guild.id)
+        if existing is None:
+            config = VoiceLobbyConfig(guild_id=interaction.guild.id, enabled=True)
+        else:
+            existing.enabled = True
+            config = existing
+
+        repo.save_config(self.firestore, config)
+
+        content = (
+            "✅ **Voice Lobby enabled!**\n\n"
+            "Next step: open `/config` → **Voice Lobby** to set entry channel, defaults, and role rules."
+        )
+        if use_send:
+            await interaction.response.send_message(content, ephemeral=True)
+        else:
+            await interaction.response.edit_message(content=content, embed=None, view=None)
+
+    async def disable_feature(
+        self,
+        interaction: discord.Interaction,
+        *,
+        use_send: bool = False,
+    ) -> None:
+        """Disable the feature from the shared config shell."""
+        if not interaction.guild:
+            return
+
+        config = repo.get_config(self.firestore, interaction.guild.id)
+        if not config or not config.enabled:
+            content = "Voice Lobby is not enabled."
+            if use_send:
+                await interaction.response.send_message(content, ephemeral=True)
+            else:
+                await interaction.response.edit_message(content=content, embed=None, view=None)
+            return
+
+        config.enabled = False
+        repo.save_config(self.firestore, config)
+
+        content = "✅ **Voice Lobby disabled!**"
+        if use_send:
+            await interaction.response.send_message(content, ephemeral=True)
+        else:
+            await interaction.response.edit_message(content=content, embed=None, view=None)
+
+    async def show_config_status(
+        self,
+        interaction: discord.Interaction,
+        *,
+        view: discord.ui.View,
+    ) -> None:
+        """Show feature status for the shared config shell."""
+        if not interaction.guild:
+            return
+
+        config = repo.get_config(self.firestore, interaction.guild.id)
+        if config is None:
+            await interaction.response.edit_message(
+                content=(
+                    "Voice lobby is not configured yet.\n"
+                    "Use **Entry Channel** and **Defaults** to configure it."
+                ),
+                embed=None,
+                view=view,
+            )
+            return
+
+        if config.entry_voice_channel_id is None:
+            entry_label = "Not set"
+        else:
+            entry_channel = interaction.guild.get_channel(config.entry_voice_channel_id)
+            if isinstance(entry_channel, discord.VoiceChannel):
+                entry_label = entry_channel.mention
+            else:
+                entry_label = f"Missing({config.entry_voice_channel_id})"
+
+        if config.lobby_category_id is None:
+            category_label = "Same category as entry channel"
+        else:
+            category = interaction.guild.get_channel(config.lobby_category_id)
+            if isinstance(category, discord.CategoryChannel):
+                category_label = category.mention
+            else:
+                category_label = f"Missing({config.lobby_category_id})"
+
+        await interaction.response.edit_message(
+            content=(
+                f"Enabled: **{'Yes' if config.enabled else 'No'}**\n"
+                f"Entry channel: {entry_label}\n"
+                f"Lobby category: {category_label}\n"
+                f"Default user limit: **{config.default_user_limit}**\n"
+                f"Name template: `{config.name_template}`\n"
+                f"Create roles: {self._format_role_mentions(interaction.guild, config.creator_role_ids)}\n"
+                f"Join roles: {self._format_role_mentions(interaction.guild, config.join_role_ids)}"
+            ),
+            embed=None,
+            view=view,
+        )
+
+    async def set_entry_channel(
+        self,
+        interaction: discord.Interaction,
+        entry_channel: discord.VoiceChannel,
+        *,
+        view: discord.ui.View,
+    ) -> None:
+        """Persist the entry voice channel from the shared config shell."""
+        if not interaction.guild:
+            return
+
+        config = repo.get_or_create_config(self.firestore, interaction.guild.id)
+        config.enabled = True
+        config.entry_voice_channel_id = entry_channel.id
+        repo.save_config(self.firestore, config)
+
+        await interaction.response.edit_message(
+            content=f"✅ Entry voice channel set to {entry_channel.mention}.",
+            embed=None,
+            view=view,
+        )
+
+    async def set_category(
+        self,
+        interaction: discord.Interaction,
+        category: discord.CategoryChannel | None,
+        *,
+        view: discord.ui.View,
+    ) -> None:
+        """Persist the lobby category from the shared config shell."""
+        if not interaction.guild:
+            return
+
+        config = repo.get_or_create_config(self.firestore, interaction.guild.id)
+        config.enabled = True
+        config.lobby_category_id = category.id if category else None
+        repo.save_config(self.firestore, config)
+
+        content = (
+            "✅ Lobby category reset to **entry channel category**."
+            if category is None
+            else f"✅ Lobby category set to {category.mention}."
+        )
+        await interaction.response.edit_message(content=content, embed=None, view=view)
+
+    async def set_defaults(
+        self,
+        interaction: discord.Interaction,
+        name_template: str,
+        default_user_limit: str,
+    ) -> None:
+        """Persist default config values from the shared config shell."""
+        if not interaction.guild:
+            return
+
+        try:
+            parsed_user_limit = int(default_user_limit)
+        except (TypeError, ValueError):
+            await interaction.response.send_message(
+                "Default user limit must be a number between 0 and 99.",
+                ephemeral=True,
+            )
+            return
+
+        if parsed_user_limit < 0 or parsed_user_limit > 99:
+            await interaction.response.send_message(
+                "Default user limit must be a number between 0 and 99.",
+                ephemeral=True,
+            )
+            return
+
+        config = repo.get_or_create_config(self.firestore, interaction.guild.id)
+        config.enabled = True
+        config.name_template = name_template.strip() or "Lobby - {owner}"
+        config.default_user_limit = parsed_user_limit
+        repo.save_config(self.firestore, config)
+
+        await interaction.response.send_message(
+            (
+                "✅ Voice lobby defaults saved.\n"
+                f"Template: `{config.name_template}`\n"
+                f"Default user limit: **{config.default_user_limit}**"
+            ),
+            ephemeral=True,
+        )
+
+    async def add_creator_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+        *,
+        view: discord.ui.View,
+    ) -> None:
+        await self._add_role(
+            interaction,
+            role,
+            field_name="creator_role_ids",
+            label="creator",
+            view=view,
+        )
+
+    async def remove_creator_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+        *,
+        view: discord.ui.View,
+    ) -> None:
+        await self._remove_role(
+            interaction,
+            role,
+            field_name="creator_role_ids",
+            label="creator",
+            view=view,
+        )
+
+    async def clear_creator_roles(
+        self,
+        interaction: discord.Interaction,
+        *,
+        view: discord.ui.View,
+    ) -> None:
+        await self._clear_roles(
+            interaction,
+            field_name="creator_role_ids",
+            label="creator",
+            view=view,
+        )
+
+    async def add_join_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+        *,
+        view: discord.ui.View,
+    ) -> None:
+        await self._add_role(
+            interaction,
+            role,
+            field_name="join_role_ids",
+            label="join",
+            view=view,
+        )
+
+    async def remove_join_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+        *,
+        view: discord.ui.View,
+    ) -> None:
+        await self._remove_role(
+            interaction,
+            role,
+            field_name="join_role_ids",
+            label="join",
+            view=view,
+        )
+
+    async def clear_join_roles(
+        self,
+        interaction: discord.Interaction,
+        *,
+        view: discord.ui.View,
+    ) -> None:
+        await self._clear_roles(
+            interaction,
+            field_name="join_role_ids",
+            label="join",
+            view=view,
+        )
+
+    @staticmethod
+    def _format_role_mentions(guild: discord.Guild, role_ids: list[int]) -> str:
+        if not role_ids:
+            return "Any role"
+        mentions: list[str] = []
+        for role_id in role_ids:
+            role = guild.get_role(role_id)
+            mentions.append(role.mention if role else f"Missing({role_id})")
+        return ", ".join(mentions)
+
+    async def _add_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+        *,
+        field_name: str,
+        label: str,
+        view: discord.ui.View,
+    ) -> None:
+        if not interaction.guild:
+            return
+
+        config = repo.get_or_create_config(self.firestore, interaction.guild.id)
+        role_ids = getattr(config, field_name)
+        if role.id in role_ids:
+            await interaction.response.edit_message(
+                content=f"{role.mention} is already in {label} roles.",
+                embed=None,
+                view=view,
+            )
+            return
+
+        role_ids.append(role.id)
+        setattr(config, field_name, role_ids)
+        repo.save_config(self.firestore, config)
+
+        await interaction.response.edit_message(
+            content=f"✅ Added {role.mention} to {label} roles.",
+            embed=None,
+            view=view,
+        )
+
+    async def _remove_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+        *,
+        field_name: str,
+        label: str,
+        view: discord.ui.View,
+    ) -> None:
+        if not interaction.guild:
+            return
+
+        config = repo.get_or_create_config(self.firestore, interaction.guild.id)
+        role_ids = getattr(config, field_name)
+        if role.id not in role_ids:
+            await interaction.response.edit_message(
+                content=f"{role.mention} is not in {label} roles.",
+                embed=None,
+                view=view,
+            )
+            return
+
+        role_ids.remove(role.id)
+        setattr(config, field_name, role_ids)
+        repo.save_config(self.firestore, config)
+
+        await interaction.response.edit_message(
+            content=f"✅ Removed {role.mention} from {label} roles.",
+            embed=None,
+            view=view,
+        )
+
+    async def _clear_roles(
+        self,
+        interaction: discord.Interaction,
+        *,
+        field_name: str,
+        label: str,
+        view: discord.ui.View,
+    ) -> None:
+        if not interaction.guild:
+            return
+
+        config = repo.get_or_create_config(self.firestore, interaction.guild.id)
+        setattr(config, field_name, [])
+        repo.save_config(self.firestore, config)
+
+        await interaction.response.edit_message(
+            content=f"✅ Cleared {label} role restrictions.",
+            embed=None,
+            view=view,
+        )
+
     @staticmethod
     def _sanitize_channel_name(name: str) -> str:
         normalized = " ".join(name.strip().split())

@@ -688,33 +688,7 @@ class ContentReviewDisabledView(discord.ui.View):
     async def enable_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        cr_cog = self.cog.bot.get_cog("ContentReviewCog")
-        if not cr_cog:
-            await interaction.response.send_message(
-                "Content Review module is not loaded.", ephemeral=True
-            )
-            return
-        try:
-            from lifeguard.modules.content_review.views.config_ui import (
-                ContentReviewSetupView,
-            )
-        except ImportError:
-            LOGGER.exception("Failed to import ContentReviewSetupView")
-            await interaction.response.send_message(
-                "Content Review module failed to load.", ephemeral=True
-            )
-            return
-
-        view = ContentReviewSetupView(cr_cog)
-        embed = discord.Embed(
-            title="📝 Content Review Setup",
-            description=(
-                "Select the **ticket category** where review channels will be created.\n\n"
-                "The submit button will be posted in the current channel."
-            ),
-            color=discord.Color.blue(),
-        )
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await self.cog._show_content_review_setup(interaction)
 
     @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️")
     async def back_button(

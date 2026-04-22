@@ -226,6 +226,66 @@ class ContentReviewCog(commands.Cog):
         self.bot.add_view(CloseTicketButton(""))
         LOGGER.info("Content Review cog loaded")
 
+    async def show_setup(
+        self,
+        interaction: discord.Interaction,
+        *,
+        use_send: bool = False,
+    ) -> None:
+        """Show the setup flow for the shared config shell."""
+        view = ContentReviewSetupView(self)
+        embed = discord.Embed(
+            title="📝 Content Review Setup",
+            description=(
+                "Select the **ticket category** where review channels will be created.\n\n"
+                "The submit button will be posted in the current channel."
+            ),
+            color=discord.Color.blue(),
+        )
+        if use_send:
+            await interaction.response.send_message(
+                embed=embed,
+                view=view,
+                ephemeral=True,
+            )
+        else:
+            await interaction.response.edit_message(content=None, embed=embed, view=view)
+
+    async def show_config_menu(
+        self,
+        interaction: discord.Interaction,
+        *,
+        disabled_view: discord.ui.View,
+    ) -> None:
+        """Show the config menu or disabled placeholder for the shared shell."""
+        if not interaction.guild:
+            return
+
+        config = repo.get_config(self.firestore, interaction.guild.id)
+        if not config or not config.enabled:
+            embed = discord.Embed(
+                title="📝 Content Review",
+                description="Content Review is **not enabled**. Enable it to get started.",
+                color=discord.Color.greyple(),
+            )
+            await interaction.response.edit_message(
+                embed=embed,
+                view=disabled_view,
+                content=None,
+            )
+            return
+
+        await self._show_content_review_config(interaction)
+
+    async def disable_feature(
+        self,
+        interaction: discord.Interaction,
+        *,
+        use_send: bool = False,
+    ) -> None:
+        """Disable the feature from the shared config shell."""
+        await self._disable_content_review_feature(interaction, use_send=use_send)
+
     # --- Config Menu Navigation (called by ConfigCog) ---
 
     async def _show_content_review_config(

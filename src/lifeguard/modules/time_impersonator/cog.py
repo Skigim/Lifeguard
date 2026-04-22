@@ -11,6 +11,7 @@ from discord.ext import commands
 
 from lifeguard.exceptions import FeatureDisabledError
 from lifeguard.modules.time_impersonator import repo
+from lifeguard.modules.time_impersonator.config import TimeImpersonatorConfig
 from lifeguard.modules.time_impersonator.models import UserTimezone
 
 if TYPE_CHECKING:
@@ -245,6 +246,80 @@ class TimeImpersonatorCog(commands.Cog):
     def firestore(self) -> FirestoreClient | None:
         """Access Firestore client from bot instance."""
         return getattr(self.bot, "lifeguard_firestore", None)
+
+    async def show_config_status(
+        self,
+        interaction: discord.Interaction,
+        *,
+        view: discord.ui.View,
+    ) -> None:
+        """Show feature status for the shared config shell."""
+        if not interaction.guild or self.firestore is None:
+            return
+
+        config = repo.get_config(self.firestore, interaction.guild.id)
+        status = "✅ Enabled" if config and config.enabled else "❌ Disabled"
+
+        await interaction.response.edit_message(
+            content=f"**Time Impersonator:** {status}",
+            embed=None,
+            view=view,
+        )
+
+    async def enable_feature(
+        self,
+        interaction: discord.Interaction,
+        *,
+        use_send: bool = False,
+    ) -> None:
+        """Enable the feature from the shared config shell."""
+        if not interaction.guild or self.firestore is None:
+            return
+
+        config = TimeImpersonatorConfig(guild_id=interaction.guild.id, enabled=True)
+        repo.save_config(self.firestore, config)
+
+        content = (
+            "✅ **Time Impersonator enabled!**\n\n"
+            "Users can now:\n"
+            "• `/tz set` — Set their timezone\n"
+            "• `/time` — Send messages with dynamic timestamps\n\n"
+            "The bot needs **Manage Webhooks** permission in channels where `/time` is used."
+        )
+        if use_send:
+            await interaction.response.send_message(content, ephemeral=True)
+        else:
+            await interaction.response.edit_message(content=content, embed=None, view=None)
+        LOGGER.info("Time Impersonator enabled: guild=%s", interaction.guild.id)
+
+    async def disable_feature(
+        self,
+        interaction: discord.Interaction,
+        *,
+        use_send: bool = False,
+    ) -> None:
+        """Disable the feature from the shared config shell."""
+        if not interaction.guild or self.firestore is None:
+            return
+
+        config = repo.get_config(self.firestore, interaction.guild.id)
+        if not config or not config.enabled:
+            content = "Time Impersonator is not enabled."
+            if use_send:
+                await interaction.response.send_message(content, ephemeral=True)
+            else:
+                await interaction.response.edit_message(content=content, embed=None, view=None)
+            return
+
+        config = TimeImpersonatorConfig(guild_id=interaction.guild.id, enabled=False)
+        repo.save_config(self.firestore, config)
+
+        content = "✅ **Time Impersonator disabled!**"
+        if use_send:
+            await interaction.response.send_message(content, ephemeral=True)
+        else:
+            await interaction.response.edit_message(content=content, embed=None, view=None)
+        LOGGER.info("Time Impersonator disabled: guild=%s", interaction.guild.id)
 
     # --- User Commands ---
 
