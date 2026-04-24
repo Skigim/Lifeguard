@@ -367,7 +367,10 @@ async def _show_<name>_status(self, interaction: discord.Interaction) -> None:
 
     await feature_cog.show_config_status(
         interaction,
-        view=<Name>ConfigView(self),
+        view=<Name>ConfigView(
+            feature_cog,
+            on_back_to_home=self._show_config_home,
+        ),
     )
 ```
 

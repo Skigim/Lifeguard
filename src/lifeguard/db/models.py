@@ -44,7 +44,7 @@ class Item(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
-    # External item type string, e.g. T8_2H_DUALSWORD@2
+    # External item type string from the owning integration.
     item_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
 
     # Optional human label (if you later load metadata dumps)

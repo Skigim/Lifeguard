@@ -32,6 +32,7 @@ from lifeguard.modules.content_review.views.review_wizard import (
 from lifeguard.modules.content_review.views.config_ui import (
     BackToContentReviewView,
     ContentReviewConfigView,
+    ContentReviewSetupView,
     EditFormMenuView,
     RemoveCategoryView,
     RemoveFieldView,

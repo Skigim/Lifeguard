@@ -334,6 +334,21 @@ class ConfigCog(commands.Cog):
             on_back_to_home=self._show_config_home,
         )
 
+    async def _show_content_review_setup(
+        self, interaction: discord.Interaction
+    ) -> None:
+        """Show the Content Review setup flow from the disabled config view."""
+        cr_cog = self._get_content_review_cog()
+        if cr_cog is None:
+            await interaction.response.edit_message(
+                content=_MSG_CONTENT_REVIEW_NOT_LOADED,
+                embed=None,
+                view=None,
+            )
+            return
+
+        await cr_cog.show_setup(interaction)
+
     async def _show_voice_lobby_menu(self, interaction: discord.Interaction) -> None:
         await interaction.response.edit_message(
             embed=self._build_voice_lobby_embed(),
@@ -578,7 +593,7 @@ class ConfigCog(commands.Cog):
         cog = self._get_voice_lobby_cog()
         if cog is None:
             await interaction.response.send_message(
-                "Voice Lobby module is not loaded.",
+                _MSG_VOICE_LOBBY_NOT_LOADED,
                 ephemeral=True,
             )
             return
