@@ -34,10 +34,3 @@ A robust ticketing and review system tailored for content ingestion and feedback
 * **/leaderboard:** Displays a ranking of the most active reviewers in the server.
 * **/review-profile:** Let a reviewer check their individual statistics and contribution history.
 * **Sticky Navigation:** Persists important navigational buttons or menus at the bottom of active ticket channels so reviewers always have access to the controls.
-
----
-
-## ⚔️ Albion Online Integrations
-A utility module for fetching and displaying data from the Albion Online API.
-* **/search:** Retrieves standard Albion player or guild statistics.
-* **/build:** Look up specific saved loadouts/builds via an ID directly within Discord.

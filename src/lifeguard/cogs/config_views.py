@@ -29,8 +29,6 @@ class ConfigFeatureSelectView(discord.ui.View):
     def __init__(self, cog: "ConfigCog") -> None:
         super().__init__(timeout=120)
         self.cog = cog
-        if not cog.bot.get_cog("AlbionCog"):
-            self.remove_item(self.albion_button)
 
     @discord.ui.button(
         label="General Settings",
@@ -75,17 +73,6 @@ class ConfigFeatureSelectView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._show_voice_lobby_menu(interaction)
-
-    @discord.ui.button(
-        label="Albion Features",
-        style=discord.ButtonStyle.secondary,
-        emoji="⚔️",
-        row=1,
-    )
-    async def albion_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await self.cog._show_albion_menu(interaction)
 
 
 # ---------------------------------------------------------------------------
@@ -212,81 +199,6 @@ class BackToGeneralView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self.cog._show_general_menu(interaction)
-
-
-# ---------------------------------------------------------------------------
-# Albion config
-# ---------------------------------------------------------------------------
-
-
-class AlbionConfigView(discord.ui.View):
-    """Config menu for Albion features."""
-
-    def __init__(self, cog: "ConfigCog") -> None:
-        super().__init__(timeout=120)
-        self.cog = cog
-
-    @discord.ui.button(
-        label="Status", style=discord.ButtonStyle.secondary, emoji="📋", row=0
-    )
-    async def view_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await self.cog._show_albion_status(interaction)
-
-    @discord.ui.button(
-        label="Enable Prices", style=discord.ButtonStyle.success, emoji="💰", row=0
-    )
-    async def enable_prices_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await self.cog._enable_albion_feature(interaction, "prices")
-
-    @discord.ui.button(
-        label="Disable Prices", style=discord.ButtonStyle.danger, emoji="❌", row=0
-    )
-    async def disable_prices_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await self.cog._disable_albion_feature(interaction, "prices")
-
-    @discord.ui.button(
-        label="Enable Builds", style=discord.ButtonStyle.success, emoji="⚔️", row=0
-    )
-    async def enable_builds_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await self.cog._enable_albion_feature(interaction, "builds")
-
-    @discord.ui.button(
-        label="Disable Builds", style=discord.ButtonStyle.danger, emoji="❌", row=0
-    )
-    async def disable_builds_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await self.cog._disable_albion_feature(interaction, "builds")
-
-    @discord.ui.button(
-        label="Back", style=discord.ButtonStyle.secondary, emoji="↩️", row=1
-    )
-    async def back_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await self.cog._show_config_home(interaction)
-
-
-class BackToAlbionView(discord.ui.View):
-    """Simple back navigation view to Albion menu."""
-
-    def __init__(self, cog: "ConfigCog") -> None:
-        super().__init__(timeout=120)
-        self.cog = cog
-
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️")
-    async def back_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await self.cog._show_albion_menu(interaction)
 
 
 # ---------------------------------------------------------------------------
@@ -777,33 +689,7 @@ class ContentReviewDisabledView(discord.ui.View):
     async def enable_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        cr_cog = self.cog.bot.get_cog("ContentReviewCog")
-        if not cr_cog:
-            await interaction.response.send_message(
-                "Content Review module is not loaded.", ephemeral=True
-            )
-            return
-        try:
-            from lifeguard.modules.content_review.views.config_ui import (
-                ContentReviewSetupView,
-            )
-        except ImportError:
-            LOGGER.exception("Failed to import ContentReviewSetupView")
-            await interaction.response.send_message(
-                "Content Review module failed to load.", ephemeral=True
-            )
-            return
-
-        view = ContentReviewSetupView(cr_cog)
-        embed = discord.Embed(
-            title="📝 Content Review Setup",
-            description=(
-                "Select the **ticket category** where review channels will be created.\n\n"
-                "The submit button will be posted in the current channel."
-            ),
-            color=discord.Color.blue(),
-        )
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await self.cog._show_content_review_setup(interaction)
 
     @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️")
     async def back_button(

@@ -20,12 +20,14 @@ async def get_or_create_zone(session: AsyncSession, *, name: str) -> Zone:
 async def upsert_guild(
     session: AsyncSession,
     *,
-    albion_id: str,
+    external_id: str,
     name: str,
     alliance_id: str | None = None,
     alliance_name: str | None = None,
 ) -> Guild:
-    existing = await session.scalar(select(Guild).where(Guild.albion_id == albion_id))
+    existing = await session.scalar(
+        select(Guild).where(Guild.external_id == external_id)
+    )
     if existing:
         existing.name = name
         existing.alliance_id = alliance_id
@@ -33,7 +35,7 @@ async def upsert_guild(
         await session.flush()
         return existing
     guild = Guild(
-        albion_id=albion_id,
+        external_id=external_id,
         name=name,
         alliance_id=alliance_id,
         alliance_name=alliance_name,
@@ -46,17 +48,19 @@ async def upsert_guild(
 async def upsert_player(
     session: AsyncSession,
     *,
-    albion_id: str,
+    external_id: str,
     name: str,
     guild: Guild | None = None,
 ) -> Player:
-    existing = await session.scalar(select(Player).where(Player.albion_id == albion_id))
+    existing = await session.scalar(
+        select(Player).where(Player.external_id == external_id)
+    )
     if existing:
         existing.name = name
         existing.guild = guild
         await session.flush()
         return existing
-    player = Player(albion_id=albion_id, name=name, guild=guild)
+    player = Player(external_id=external_id, name=name, guild=guild)
     session.add(player)
     await session.flush()
     return player

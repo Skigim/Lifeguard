@@ -4,7 +4,6 @@ import inspect
 import logging
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import discord
 from discord import app_commands
@@ -12,9 +11,6 @@ from discord.ext import commands
 
 from lifeguard import __version__
 from lifeguard.config import Config
-
-if TYPE_CHECKING:
-    import aiohttp
 
 LOGGER = logging.getLogger(__name__)
 
@@ -152,8 +148,6 @@ def create_bot(config: Config) -> commands.Bot:
 
         await bot.add_cog(_load_core_cog(bot))
         await bot.add_cog(_load_config_cog(bot))
-        # Albion cog disabled for now
-        # await bot.add_cog(_load_albion_cog(bot, config, session))
         await bot.add_cog(_load_content_review_cog(bot))
         await bot.add_cog(_load_time_impersonator_cog(bot))
         await bot.add_cog(_load_voice_lobby_cog(bot))
@@ -189,16 +183,6 @@ def _load_config_cog(bot: commands.Bot) -> commands.Cog:
     from lifeguard.cogs.config_cog import ConfigCog
 
     return ConfigCog(bot)
-
-
-def _load_albion_cog(
-    bot: commands.Bot,
-    config: Config,
-    session: aiohttp.ClientSession,
-) -> commands.Cog:
-    from lifeguard.modules.albion.cog import AlbionCog
-
-    return AlbionCog(bot, config, session)
 
 
 def _load_content_review_cog(bot: commands.Bot) -> commands.Cog:

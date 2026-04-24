@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -31,6 +32,7 @@ from lifeguard.modules.content_review.views.review_wizard import (
 from lifeguard.modules.content_review.views.config_ui import (
     BackToContentReviewView,
     ContentReviewConfigView,
+    ContentReviewSetupView,
     EditFormMenuView,
     RemoveCategoryView,
     RemoveFieldView,
@@ -155,6 +157,9 @@ class ContentReviewCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
+        self._config_home_handler: (
+            Callable[[discord.Interaction], Awaitable[None]] | None
+        ) = None
         self._pending_reviews: dict[str, ReviewWizardView] = {}
 
     @property
@@ -226,6 +231,70 @@ class ContentReviewCog(commands.Cog):
         self.bot.add_view(CloseTicketButton(""))
         LOGGER.info("Content Review cog loaded")
 
+    async def show_setup(
+        self,
+        interaction: discord.Interaction,
+        *,
+        use_send: bool = False,
+    ) -> None:
+        """Show the setup flow for the shared config shell."""
+        view = ContentReviewSetupView(self)
+        embed = discord.Embed(
+            title="📝 Content Review Setup",
+            description=(
+                "Select the **ticket category** where review channels will be created.\n\n"
+                "The submit button will be posted in the current channel."
+            ),
+            color=discord.Color.blue(),
+        )
+        if use_send:
+            await interaction.response.send_message(
+                embed=embed,
+                view=view,
+                ephemeral=True,
+            )
+        else:
+            await interaction.response.edit_message(
+                content=None, embed=embed, view=view
+            )
+
+    async def show_config_menu(
+        self,
+        interaction: discord.Interaction,
+        *,
+        disabled_view: discord.ui.View,
+        on_back_to_home: Callable[[discord.Interaction], Awaitable[None]],
+    ) -> None:
+        """Show the config menu or disabled placeholder for the shared shell."""
+        if not interaction.guild:
+            return
+
+        self._config_home_handler = on_back_to_home
+        config = repo.get_config(self.firestore, interaction.guild.id)
+        if not config or not config.enabled:
+            embed = discord.Embed(
+                title="📝 Content Review",
+                description="Content Review is **not enabled**. Enable it to get started.",
+                color=discord.Color.greyple(),
+            )
+            await interaction.response.edit_message(
+                embed=embed,
+                view=disabled_view,
+                content=None,
+            )
+            return
+
+        await self._show_content_review_config(interaction)
+
+    async def disable_feature(
+        self,
+        interaction: discord.Interaction,
+        *,
+        use_send: bool = False,
+    ) -> None:
+        """Disable the feature from the shared config shell."""
+        await self._disable_content_review_feature(interaction, use_send=use_send)
+
     # --- Config Menu Navigation (called by ConfigCog) ---
 
     async def _show_content_review_config(
@@ -243,9 +312,20 @@ class ContentReviewCog(commands.Cog):
         )
         await interaction.response.edit_message(
             embed=embed,
-            view=ContentReviewConfigView(self),
+            view=ContentReviewConfigView(
+                self, on_back_to_home=self._show_shared_config_home
+            ),
             content=None,
         )
+
+    async def _show_shared_config_home(self, interaction: discord.Interaction) -> None:
+        """Return to the shared config shell from Content Review config UI."""
+        if self._config_home_handler is None:
+            await interaction.response.send_message(
+                "Configuration not available.", ephemeral=True
+            )
+            return
+        await self._config_home_handler(interaction)
 
     async def _show_sticky_menu(self, interaction: discord.Interaction) -> None:
         """Show nested sticky message configuration menu."""
