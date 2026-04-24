@@ -157,7 +157,9 @@ class ContentReviewCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
-        self._config_home_handler: Callable[[discord.Interaction], Awaitable[None]] | None = None
+        self._config_home_handler: (
+            Callable[[discord.Interaction], Awaitable[None]] | None
+        ) = None
         self._pending_reviews: dict[str, ReviewWizardView] = {}
 
     @property
@@ -252,7 +254,9 @@ class ContentReviewCog(commands.Cog):
                 ephemeral=True,
             )
         else:
-            await interaction.response.edit_message(content=None, embed=embed, view=view)
+            await interaction.response.edit_message(
+                content=None, embed=embed, view=view
+            )
 
     async def show_config_menu(
         self,
@@ -308,13 +312,13 @@ class ContentReviewCog(commands.Cog):
         )
         await interaction.response.edit_message(
             embed=embed,
-            view=ContentReviewConfigView(self, on_back_to_home=self._show_shared_config_home),
+            view=ContentReviewConfigView(
+                self, on_back_to_home=self._show_shared_config_home
+            ),
             content=None,
         )
 
-    async def _show_shared_config_home(
-        self, interaction: discord.Interaction
-    ) -> None:
+    async def _show_shared_config_home(self, interaction: discord.Interaction) -> None:
         """Return to the shared config shell from Content Review config UI."""
         if self._config_home_handler is None:
             await interaction.response.send_message(

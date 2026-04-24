@@ -119,13 +119,19 @@ class ConfigCog(commands.Cog):
         return self.bot.lifeguard_firestore  # type: ignore[attr-defined]
 
     def _get_time_impersonator_cog(self) -> "SupportsConfigToggle | None":
-        return cast("SupportsConfigToggle | None", self.bot.get_cog("TimeImpersonatorCog"))
+        return cast(
+            "SupportsConfigToggle | None", self.bot.get_cog("TimeImpersonatorCog")
+        )
 
     def _get_content_review_cog(self) -> "SupportsContentReviewConfig | None":
-        return cast("SupportsContentReviewConfig | None", self.bot.get_cog("ContentReviewCog"))
+        return cast(
+            "SupportsContentReviewConfig | None", self.bot.get_cog("ContentReviewCog")
+        )
 
     def _get_voice_lobby_cog(self) -> "SupportsVoiceLobbyConfig | None":
-        return cast("SupportsVoiceLobbyConfig | None", self.bot.get_cog("VoiceLobbyCog"))
+        return cast(
+            "SupportsVoiceLobbyConfig | None", self.bot.get_cog("VoiceLobbyCog")
+        )
 
     # ------------------------------------------------------------------
     # Shared helpers

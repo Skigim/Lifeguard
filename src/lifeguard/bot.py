@@ -4,7 +4,6 @@ import inspect
 import logging
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import discord
 from discord import app_commands
@@ -13,7 +12,6 @@ from discord.ext import commands
 from lifeguard import __version__
 from lifeguard.config import Config
 
-if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 

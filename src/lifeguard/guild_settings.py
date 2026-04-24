@@ -53,6 +53,6 @@ def get_or_create_guild_settings(
 
 def save_guild_settings(firestore: FirestoreClient, settings: GuildSettings) -> None:
     """Persist guild settings."""
-    firestore.collection(GUILD_SETTINGS_COLLECTION).document(str(settings.guild_id)).set(
-        settings.to_firestore(), merge=True
-    )
+    firestore.collection(GUILD_SETTINGS_COLLECTION).document(
+        str(settings.guild_id)
+    ).set(settings.to_firestore(), merge=True)

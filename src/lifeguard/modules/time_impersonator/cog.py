@@ -289,7 +289,9 @@ class TimeImpersonatorCog(commands.Cog):
         if use_send:
             await interaction.response.send_message(content, ephemeral=True)
         else:
-            await interaction.response.edit_message(content=content, embed=None, view=None)
+            await interaction.response.edit_message(
+                content=content, embed=None, view=None
+            )
         LOGGER.info("Time Impersonator enabled: guild=%s", interaction.guild.id)
 
     async def disable_feature(
@@ -308,7 +310,9 @@ class TimeImpersonatorCog(commands.Cog):
             if use_send:
                 await interaction.response.send_message(content, ephemeral=True)
             else:
-                await interaction.response.edit_message(content=content, embed=None, view=None)
+                await interaction.response.edit_message(
+                    content=content, embed=None, view=None
+                )
             return
 
         config = TimeImpersonatorConfig(guild_id=interaction.guild.id, enabled=False)
@@ -318,7 +322,9 @@ class TimeImpersonatorCog(commands.Cog):
         if use_send:
             await interaction.response.send_message(content, ephemeral=True)
         else:
-            await interaction.response.edit_message(content=content, embed=None, view=None)
+            await interaction.response.edit_message(
+                content=content, embed=None, view=None
+            )
         LOGGER.info("Time Impersonator disabled: guild=%s", interaction.guild.id)
 
     # --- User Commands ---

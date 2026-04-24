@@ -74,6 +74,7 @@ class ConfigFeatureSelectView(discord.ui.View):
     ) -> None:
         await self.cog._show_voice_lobby_menu(interaction)
 
+
 # ---------------------------------------------------------------------------
 # General settings
 # ---------------------------------------------------------------------------

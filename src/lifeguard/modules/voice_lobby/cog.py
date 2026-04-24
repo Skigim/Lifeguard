@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 
+
 # #region agent log
 def _vl_debug(location: str, message: str, data: dict, hypothesis_id: str) -> None:
     try:
@@ -36,6 +37,8 @@ def _vl_debug(location: str, message: str, data: dict, hypothesis_id: str) -> No
             )
     except Exception:
         pass
+
+
 # #endregion
 
 
@@ -86,7 +89,9 @@ class VoiceLobbyCog(commands.Cog):
         if use_send:
             await interaction.response.send_message(content, ephemeral=True)
         else:
-            await interaction.response.edit_message(content=content, embed=None, view=None)
+            await interaction.response.edit_message(
+                content=content, embed=None, view=None
+            )
 
     async def disable_feature(
         self,
@@ -104,7 +109,9 @@ class VoiceLobbyCog(commands.Cog):
             if use_send:
                 await interaction.response.send_message(content, ephemeral=True)
             else:
-                await interaction.response.edit_message(content=content, embed=None, view=None)
+                await interaction.response.edit_message(
+                    content=content, embed=None, view=None
+                )
             return
 
         config.enabled = False
@@ -114,7 +121,9 @@ class VoiceLobbyCog(commands.Cog):
         if use_send:
             await interaction.response.send_message(content, ephemeral=True)
         else:
-            await interaction.response.edit_message(content=content, embed=None, view=None)
+            await interaction.response.edit_message(
+                content=content, embed=None, view=None
+            )
 
     async def show_config_status(
         self,
