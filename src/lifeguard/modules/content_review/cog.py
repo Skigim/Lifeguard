@@ -235,10 +235,11 @@ class ContentReviewCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         *,
+        on_back_to_home: Callable[[discord.Interaction], Awaitable[None]] | None = None,
         use_send: bool = False,
     ) -> None:
         """Show the setup flow for the shared config shell."""
-        view = ContentReviewSetupView(self)
+        view = ContentReviewSetupView(self, on_back_to_home=on_back_to_home)
         embed = discord.Embed(
             title="📝 Content Review Setup",
             description=(
@@ -262,7 +263,7 @@ class ContentReviewCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         *,
-        disabled_view: discord.ui.View,
+        disabled_view: discord.ui.View | None,
         on_back_to_home: Callable[[discord.Interaction], Awaitable[None]],
     ) -> None:
         """Show the config menu or disabled placeholder for the shared shell."""
@@ -272,16 +273,20 @@ class ContentReviewCog(commands.Cog):
         self._config_home_handler = on_back_to_home
         config = repo.get_config(self.firestore, interaction.guild.id)
         if not config or not config.enabled:
+            if disabled_view is None:
+                await self.show_setup(
+                    interaction,
+                    on_back_to_home=on_back_to_home,
+                    use_send=False,
+                )
+                return
+
             embed = discord.Embed(
                 title="📝 Content Review",
                 description="Content Review is **not enabled**. Enable it to get started.",
                 color=discord.Color.greyple(),
             )
-            await interaction.response.edit_message(
-                embed=embed,
-                view=disabled_view,
-                content=None,
-            )
+            await interaction.response.edit_message(embed=embed, view=disabled_view, content=None)
             return
 
         await self._show_content_review_config(interaction)

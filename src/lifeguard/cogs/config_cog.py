@@ -1,14 +1,9 @@
-"""Configuration Cog – owns /config, /enable-feature, /disable-feature.
-
-This cog is the single owner of all cross-cutting configuration commands and
-their supporting helpers.  Module-specific sub-menus delegate back to the
-owning module's cog when needed (e.g. Content Review setup).
-"""
+"""Configuration Cog – owns /config, /enable-feature, /disable-feature."""
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import discord
 from discord import app_commands
@@ -16,96 +11,66 @@ from discord.ext import commands
 
 from lifeguard.cogs.config_views import (
     BackToGeneralView,
-    ConfigFeatureSelectView,
-    ContentReviewDisabledView,
+    ConfigHomeView,
+    ConfigUnavailableFeatureView,
     GeneralConfigView,
     RemoveBotAdminRoleView,
-    TimeImpersonatorConfigView,
-    VoiceLobbyConfigView,
 )
+from lifeguard.features.availability import FeatureEntry, resolve_feature_entries
+from lifeguard.features.registry import FeatureRegistry
 from lifeguard.guild_settings import (
     get_guild_settings,
     get_or_create_guild_settings,
+    remember_feature_key,
     save_guild_settings,
 )
 
 if TYPE_CHECKING:
-    from lifeguard.feature_interfaces import (
-        SupportsConfigToggle,
-        SupportsContentReviewConfig,
-        SupportsVoiceLobbyConfig,
-    )
     from google.cloud.firestore import Client as FirestoreClient
 
 LOGGER = logging.getLogger(__name__)
 
-# --- Common Response Strings ---
+
+def build_feature_autocomplete_choices(
+    feature_entries: list[FeatureEntry],
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    current_lower = current.lower()
+    matches: list[app_commands.Choice[str]] = []
+    for entry in feature_entries:
+        if entry.status != "available":
+            continue
+        haystacks = (entry.feature_key.lower(), entry.display_name.lower())
+        if current_lower and not any(current_lower in haystack for haystack in haystacks):
+            continue
+        matches.append(
+            app_commands.Choice(
+                name=f"{entry.display_name} - {entry.description}",
+                value=entry.feature_key,
+            )
+        )
+    return matches[:25]
+
+
 _MSG_SERVER_ONLY = "Server only."
 _MSG_NO_PERMISSION = "You don't have permission to manage bot settings."
-_MSG_CONTENT_REVIEW_NOT_LOADED = "Content Review module is not loaded."
-_MSG_TIME_IMPERSONATOR_NOT_LOADED = "Time Impersonator module is not loaded."
-_MSG_VOICE_LOBBY_NOT_LOADED = "Voice Lobby module is not loaded."
-_STATUS_ENABLED = "✅ Enabled"
-_STATUS_DISABLED = "❌ Disabled"
-_FEATURE_CONTENT_REVIEW = "Content Review"
-_FEATURE_VOICE_LOBBY = "Voice Lobby"
-
-
-# --- Feature Registry ---
-FEATURES: list[tuple[str, str, str, bool]] = [
-    (
-        "content_review",
-        "Content Review",
-        "Review system with tickets, scoring, and leaderboards",
-        True,
-    ),
-    (
-        "time_impersonator",
-        "Time Impersonator",
-        "Send messages with dynamic Discord timestamps",
-        False,
-    ),
-    (
-        "voice_lobby",
-        "Voice Lobby",
-        "Temporary voice lobbies created from an entry channel",
-        False,
-    ),
-]
-
-
-def _get_feature_choices() -> list[app_commands.Choice[str]]:
-    """Get all features as Choice objects for autocomplete."""
-    return [
-        app_commands.Choice(name=f"{display} - {desc}", value=value)
-        for value, display, desc, _ in FEATURES
-    ]
 
 
 async def feature_autocomplete(  # NOSONAR - discord.py requires async
     interaction: discord.Interaction,
     current: str,
 ) -> list[app_commands.Choice[str]]:
-    """Autocomplete handler for feature parameter."""
-    current_lower = current.lower()
-    choices = []
-    for value, display, desc, _ in FEATURES:
-        if current_lower in value.lower() or current_lower in display.lower():
-            choices.append(app_commands.Choice(name=f"{display} - {desc}", value=value))
-    return choices[:25]
+    if not interaction.guild:
+        return []
 
+    registry = getattr(interaction.client, "lifeguard_features", None)
+    firestore = getattr(interaction.client, "lifeguard_firestore", None)
+    if registry is None or firestore is None:
+        return []
 
-def _is_valid_feature(value: str) -> bool:
-    """Check if a feature value is valid."""
-    return any(f[0] == value for f in FEATURES)
-
-
-def _feature_requires_setup(value: str) -> bool:
-    """Check if a feature requires interactive setup."""
-    for f in FEATURES:
-        if f[0] == value:
-            return f[3]
-    return False
+    settings = get_or_create_guild_settings(firestore, interaction.guild.id)
+    entries = resolve_feature_entries(registry, settings)
+    return build_feature_autocomplete_choices(entries, current)
 
 
 class ConfigCog(commands.Cog):
@@ -118,24 +83,35 @@ class ConfigCog(commands.Cog):
     def firestore(self) -> FirestoreClient:
         return self.bot.lifeguard_firestore  # type: ignore[attr-defined]
 
-    def _get_time_impersonator_cog(self) -> "SupportsConfigToggle | None":
-        return cast(
-            "SupportsConfigToggle | None", self.bot.get_cog("TimeImpersonatorCog")
-        )
+    @property
+    def feature_registry(self) -> FeatureRegistry:
+        return self.bot.lifeguard_features  # type: ignore[attr-defined]
 
-    def _get_content_review_cog(self) -> "SupportsContentReviewConfig | None":
-        return cast(
-            "SupportsContentReviewConfig | None", self.bot.get_cog("ContentReviewCog")
-        )
+    def _feature_entries(self, guild_id: int) -> list[FeatureEntry]:
+        self._backfill_known_feature_keys(guild_id)
+        settings = get_or_create_guild_settings(self.firestore, guild_id)
+        return resolve_feature_entries(self.feature_registry, settings)
 
-    def _get_voice_lobby_cog(self) -> "SupportsVoiceLobbyConfig | None":
-        return cast(
-            "SupportsVoiceLobbyConfig | None", self.bot.get_cog("VoiceLobbyCog")
-        )
+    def _remember_feature(self, guild_id: int, feature_key: str) -> None:
+        settings = get_or_create_guild_settings(self.firestore, guild_id)
+        remember_feature_key(settings, feature_key)
+        save_guild_settings(self.firestore, settings)
 
-    # ------------------------------------------------------------------
-    # Shared helpers
-    # ------------------------------------------------------------------
+    def _backfill_known_feature_keys(self, guild_id: int) -> None:
+        settings = get_or_create_guild_settings(self.firestore, guild_id)
+        changed = False
+        for manifest in self.feature_registry.all_manifests():
+            document = self.firestore.collection(
+                f"{manifest.feature_key}_configs"
+            ).document(str(guild_id)).get()
+            if not document.exists:
+                continue
+            before = list(settings.known_feature_keys)
+            remember_feature_key(settings, manifest.feature_key)
+            if settings.known_feature_keys != before:
+                changed = True
+        if changed:
+            save_guild_settings(self.firestore, settings)
 
     @staticmethod
     async def _respond(
@@ -167,9 +143,25 @@ class ConfigCog(commands.Cog):
         user_role_ids = {role.id for role in interaction.user.roles}
         return bool(user_role_ids & set(settings.bot_admin_role_ids))
 
-    # ------------------------------------------------------------------
-    # Slash commands
-    # ------------------------------------------------------------------
+    async def _dispatch_feature_menu(
+        self,
+        interaction: discord.Interaction,
+        feature_key: str,
+    ) -> None:
+        manifest = self.feature_registry.get_manifest(feature_key)
+        adapter = self.feature_registry.build_adapter(self.bot, feature_key)
+        if manifest is None or adapter is None:
+            await interaction.response.edit_message(
+                content=f"{feature_key.replace('_', ' ').title()} is not currently installed.",
+                embed=None,
+                view=ConfigUnavailableFeatureView(self),
+            )
+            return
+
+        if interaction.guild is not None:
+            self._remember_feature(interaction.guild.id, feature_key)
+
+        await adapter.show_menu(interaction, on_back_to_home=self._show_config_home)
 
     @app_commands.command(
         name="enable-feature",
@@ -191,29 +183,30 @@ class ConfigCog(commands.Cog):
             await interaction.response.send_message(_MSG_NO_PERMISSION, ephemeral=True)
             return
 
-        if not _is_valid_feature(feature):
+        manifest = self.feature_registry.get_manifest(feature)
+        adapter = self.feature_registry.build_adapter(self.bot, feature)
+        if manifest is None or adapter is None:
             await interaction.response.send_message(
                 f"Unknown feature: `{feature}`. Use autocomplete to select a valid feature.",
                 ephemeral=True,
             )
             return
 
-        # Features requiring setup show a wizard view
-        if _feature_requires_setup(feature) and feature == "content_review":
-            cr_cog = self._get_content_review_cog()
-            if not cr_cog:
-                await interaction.response.send_message(
-                    _MSG_CONTENT_REVIEW_NOT_LOADED, ephemeral=True
-                )
-                return
-            await cr_cog.show_setup(interaction, use_send=True)
+        self._remember_feature(interaction.guild.id, feature)
+
+        if manifest.requires_setup:
+            await adapter.show_setup(
+                interaction,
+                on_back_to_home=self._show_config_home,
+                use_send=True,
+            )
             return
 
-        # Simple features enable directly
-        if feature == "time_impersonator":
-            await self._enable_time_impersonator(interaction, use_send=True)
-        elif feature == "voice_lobby":
-            await self._enable_voice_lobby(interaction, use_send=True)
+        await adapter.enable(
+            interaction,
+            on_back_to_home=self._show_config_home,
+            use_send=True,
+        )
 
     @app_commands.command(
         name="disable-feature",
@@ -235,19 +228,17 @@ class ConfigCog(commands.Cog):
             await interaction.response.send_message(_MSG_NO_PERMISSION, ephemeral=True)
             return
 
-        if not _is_valid_feature(feature):
+        manifest = self.feature_registry.get_manifest(feature)
+        adapter = self.feature_registry.build_adapter(self.bot, feature)
+        if manifest is None or adapter is None:
             await interaction.response.send_message(
                 f"Unknown feature: `{feature}`. Use autocomplete to select a valid feature.",
                 ephemeral=True,
             )
             return
 
-        if feature == "content_review":
-            await self._disable_content_review_direct(interaction)
-        elif feature == "time_impersonator":
-            await self._disable_time_impersonator_direct(interaction)
-        elif feature == "voice_lobby":
-            await self._disable_voice_lobby_direct(interaction)
+        self._remember_feature(interaction.guild.id, feature)
+        await adapter.disable(interaction, use_send=True)
 
     @app_commands.command(
         name="config",
@@ -265,10 +256,6 @@ class ConfigCog(commands.Cog):
 
         await self._show_config_home(interaction, use_send=True)
 
-    # ------------------------------------------------------------------
-    # Embed builders
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _build_config_home_embed() -> discord.Embed:
         return discord.Embed(
@@ -285,31 +272,22 @@ class ConfigCog(commands.Cog):
             color=discord.Color.blue(),
         )
 
-    @staticmethod
-    def _build_voice_lobby_embed() -> discord.Embed:
-        return discord.Embed(
-            title="🎧 Voice Lobby Config",
-            description="Configure default temporary lobby options.",
-            color=discord.Color.blue(),
-        )
-
-    # ------------------------------------------------------------------
-    # Navigation helpers
-    # ------------------------------------------------------------------
-
     async def _show_config_home(
         self, interaction: discord.Interaction, *, use_send: bool = False
     ) -> None:
+        feature_entries = (
+            self._feature_entries(interaction.guild.id) if interaction.guild else []
+        )
         if use_send:
             await interaction.response.send_message(
                 embed=self._build_config_home_embed(),
-                view=ConfigFeatureSelectView(self),
+                view=ConfigHomeView(self, feature_entries=feature_entries),
                 ephemeral=True,
             )
             return
         await interaction.response.edit_message(
             embed=self._build_config_home_embed(),
-            view=ConfigFeatureSelectView(self),
+            view=ConfigHomeView(self, feature_entries=feature_entries),
             content=None,
         )
 
@@ -319,364 +297,6 @@ class ConfigCog(commands.Cog):
             view=GeneralConfigView(self),
             content=None,
         )
-
-    async def _show_content_review_menu(self, interaction: discord.Interaction) -> None:
-        """Navigate to the Content Review sub-menu.
-
-        Delegates to ContentReviewCog for CR-specific config when enabled.
-        """
-        cr_cog = self._get_content_review_cog()
-        if cr_cog is None:
-            await interaction.response.edit_message(
-                content=_MSG_CONTENT_REVIEW_NOT_LOADED,
-                embed=None,
-                view=None,
-            )
-            return
-
-        await cr_cog.show_config_menu(
-            interaction,
-            disabled_view=ContentReviewDisabledView(self),
-            on_back_to_home=self._show_config_home,
-        )
-
-    async def _show_content_review_setup(
-        self, interaction: discord.Interaction
-    ) -> None:
-        """Show the Content Review setup flow from the disabled config view."""
-        cr_cog = self._get_content_review_cog()
-        if cr_cog is None:
-            await interaction.response.edit_message(
-                content=_MSG_CONTENT_REVIEW_NOT_LOADED,
-                embed=None,
-                view=None,
-            )
-            return
-
-        await cr_cog.show_setup(interaction)
-
-    async def _show_voice_lobby_menu(self, interaction: discord.Interaction) -> None:
-        await interaction.response.edit_message(
-            embed=self._build_voice_lobby_embed(),
-            view=VoiceLobbyConfigView(self),
-            content=None,
-        )
-
-    async def _show_time_impersonator_menu(
-        self, interaction: discord.Interaction
-    ) -> None:
-        embed = discord.Embed(
-            title="🕐 Time Impersonator Config",
-            description="Enable, disable, or view status of the Time Impersonator feature.",
-            color=discord.Color.blue(),
-        )
-        await interaction.response.edit_message(
-            embed=embed,
-            view=TimeImpersonatorConfigView(self),
-            content=None,
-        )
-
-    async def _show_time_impersonator_status(
-        self, interaction: discord.Interaction
-    ) -> None:
-        cog = self._get_time_impersonator_cog()
-        if cog is None:
-            await interaction.response.edit_message(
-                content=_MSG_TIME_IMPERSONATOR_NOT_LOADED,
-                embed=None,
-                view=None,
-            )
-            return
-        await cog.show_config_status(
-            interaction,
-            view=TimeImpersonatorConfigView(self),
-        )
-
-    # ------------------------------------------------------------------
-    # Time Impersonator enable/disable
-    # ------------------------------------------------------------------
-
-    async def _enable_time_impersonator(
-        self,
-        interaction: discord.Interaction,
-        *,
-        use_send: bool = False,
-    ) -> None:
-        cog = self._get_time_impersonator_cog()
-        if cog is None:
-            await interaction.response.send_message(
-                _MSG_TIME_IMPERSONATOR_NOT_LOADED,
-                ephemeral=True,
-            )
-            return
-        await cog.enable_feature(interaction, use_send=use_send)
-
-    async def _disable_time_impersonator(
-        self,
-        interaction: discord.Interaction,
-        *,
-        use_send: bool = False,
-    ) -> None:
-        cog = self._get_time_impersonator_cog()
-        if cog is None:
-            await interaction.response.send_message(
-                _MSG_TIME_IMPERSONATOR_NOT_LOADED,
-                ephemeral=True,
-            )
-            return
-        await cog.disable_feature(interaction, use_send=use_send)
-
-    async def _disable_time_impersonator_direct(
-        self, interaction: discord.Interaction
-    ) -> None:
-        await self._disable_time_impersonator(interaction, use_send=True)
-
-    # ------------------------------------------------------------------
-    # Voice Lobby enable/disable + config helpers
-    # ------------------------------------------------------------------
-
-    async def _enable_voice_lobby(
-        self,
-        interaction: discord.Interaction,
-        *,
-        use_send: bool = False,
-    ) -> None:
-        cog = self._get_voice_lobby_cog()
-        if cog is None:
-            await interaction.response.send_message(
-                _MSG_VOICE_LOBBY_NOT_LOADED,
-                ephemeral=True,
-            )
-            return
-        await cog.enable_feature(interaction, use_send=use_send)
-
-    async def _disable_voice_lobby(
-        self,
-        interaction: discord.Interaction,
-        *,
-        use_send: bool = False,
-    ) -> None:
-        cog = self._get_voice_lobby_cog()
-        if cog is None:
-            await interaction.response.send_message(
-                _MSG_VOICE_LOBBY_NOT_LOADED,
-                ephemeral=True,
-            )
-            return
-        await cog.disable_feature(interaction, use_send=use_send)
-
-    async def _disable_voice_lobby_direct(
-        self, interaction: discord.Interaction
-    ) -> None:
-        await self._disable_voice_lobby(interaction, use_send=True)
-
-    @staticmethod
-    def _format_voice_role_mentions(guild: discord.Guild, role_ids: list[int]) -> str:
-        if not role_ids:
-            return "Any role"
-        mentions: list[str] = []
-        for role_id in role_ids:
-            role = guild.get_role(role_id)
-            mentions.append(role.mention if role else f"Missing({role_id})")
-        return ", ".join(mentions)
-
-    async def _show_voice_lobby_status(self, interaction: discord.Interaction) -> None:
-        cog = self._get_voice_lobby_cog()
-        if cog is None:
-            await interaction.response.edit_message(
-                content=_MSG_VOICE_LOBBY_NOT_LOADED,
-                embed=None,
-                view=None,
-            )
-            return
-        await cog.show_config_status(interaction, view=VoiceLobbyConfigView(self))
-
-    async def _set_voice_lobby_entry_channel(
-        self,
-        interaction: discord.Interaction,
-        entry_channel: discord.VoiceChannel,
-    ) -> None:
-        cog = self._get_voice_lobby_cog()
-        if cog is None:
-            await interaction.response.send_message(
-                _MSG_VOICE_LOBBY_NOT_LOADED,
-                ephemeral=True,
-            )
-            return
-        await cog.set_entry_channel(
-            interaction,
-            entry_channel,
-            view=VoiceLobbyConfigView(self),
-        )
-
-    async def _set_voice_lobby_category(
-        self,
-        interaction: discord.Interaction,
-        category: discord.CategoryChannel | None,
-    ) -> None:
-        cog = self._get_voice_lobby_cog()
-        if cog is None:
-            await interaction.response.send_message(
-                _MSG_VOICE_LOBBY_NOT_LOADED,
-                ephemeral=True,
-            )
-            return
-        await cog.set_category(
-            interaction,
-            category,
-            view=VoiceLobbyConfigView(self),
-        )
-
-    async def _set_voice_lobby_defaults(
-        self,
-        interaction: discord.Interaction,
-        name_template: str,
-        default_user_limit: str,
-    ) -> None:
-        cog = self._get_voice_lobby_cog()
-        if cog is None:
-            await interaction.response.send_message(
-                _MSG_VOICE_LOBBY_NOT_LOADED,
-                ephemeral=True,
-            )
-            return
-        await cog.set_defaults(interaction, name_template, default_user_limit)
-
-    async def _add_voice_role(
-        self,
-        interaction: discord.Interaction,
-        role: discord.Role,
-        *,
-        field_name: str,
-        label: str,
-        return_view: discord.ui.View,
-    ) -> None:
-        cog = self._get_voice_lobby_cog()
-        if cog is None:
-            await interaction.response.send_message(
-                _MSG_VOICE_LOBBY_NOT_LOADED,
-                ephemeral=True,
-            )
-            return
-
-        if field_name == "creator_role_ids":
-            await cog.add_creator_role(interaction, role, view=return_view)
-            return
-
-        await cog.add_join_role(interaction, role, view=return_view)
-
-    async def _remove_voice_role(
-        self,
-        interaction: discord.Interaction,
-        role: discord.Role,
-        *,
-        field_name: str,
-        label: str,
-        return_view: discord.ui.View,
-    ) -> None:
-        cog = self._get_voice_lobby_cog()
-        if cog is None:
-            await interaction.response.send_message(
-                _MSG_VOICE_LOBBY_NOT_LOADED,
-                ephemeral=True,
-            )
-            return
-
-        if field_name == "creator_role_ids":
-            await cog.remove_creator_role(interaction, role, view=return_view)
-            return
-
-        await cog.remove_join_role(interaction, role, view=return_view)
-
-    async def _clear_voice_roles(
-        self,
-        interaction: discord.Interaction,
-        *,
-        field_name: str,
-        label: str,
-        return_view: discord.ui.View,
-    ) -> None:
-        cog = self._get_voice_lobby_cog()
-        if cog is None:
-            await interaction.response.send_message(
-                _MSG_VOICE_LOBBY_NOT_LOADED,
-                ephemeral=True,
-            )
-            return
-
-        if field_name == "creator_role_ids":
-            await cog.clear_creator_roles(interaction, view=return_view)
-            return
-
-        await cog.clear_join_roles(interaction, view=return_view)
-
-    async def _add_voice_lobby_creator_role(
-        self, interaction: discord.Interaction, role: discord.Role
-    ) -> None:
-        await self._add_voice_role(
-            interaction,
-            role,
-            field_name="creator_role_ids",
-            label="creator",
-            return_view=VoiceLobbyConfigView(self),
-        )
-
-    async def _remove_voice_lobby_creator_role(
-        self, interaction: discord.Interaction, role: discord.Role
-    ) -> None:
-        await self._remove_voice_role(
-            interaction,
-            role,
-            field_name="creator_role_ids",
-            label="creator",
-            return_view=VoiceLobbyConfigView(self),
-        )
-
-    async def _clear_voice_lobby_creator_roles(
-        self, interaction: discord.Interaction
-    ) -> None:
-        await self._clear_voice_roles(
-            interaction,
-            field_name="creator_role_ids",
-            label="creator",
-            return_view=VoiceLobbyConfigView(self),
-        )
-
-    async def _add_voice_lobby_join_role(
-        self, interaction: discord.Interaction, role: discord.Role
-    ) -> None:
-        await self._add_voice_role(
-            interaction,
-            role,
-            field_name="join_role_ids",
-            label="join",
-            return_view=VoiceLobbyConfigView(self),
-        )
-
-    async def _remove_voice_lobby_join_role(
-        self, interaction: discord.Interaction, role: discord.Role
-    ) -> None:
-        await self._remove_voice_role(
-            interaction,
-            role,
-            field_name="join_role_ids",
-            label="join",
-            return_view=VoiceLobbyConfigView(self),
-        )
-
-    async def _clear_voice_lobby_join_roles(
-        self, interaction: discord.Interaction
-    ) -> None:
-        await self._clear_voice_roles(
-            interaction,
-            field_name="join_role_ids",
-            label="join",
-            return_view=VoiceLobbyConfigView(self),
-        )
-
-    # ------------------------------------------------------------------
-    # Bot Admin Role helpers
-    # ------------------------------------------------------------------
 
     async def _show_bot_admin_roles(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
@@ -814,23 +434,6 @@ class ConfigCog(commands.Cog):
             view=BackToGeneralView(self),
         )
         LOGGER.info("Cleared bot admin roles: guild=%s", interaction.guild.id)
-
-    # ------------------------------------------------------------------
-    # Content Review enable/disable (delegated)
-    # ------------------------------------------------------------------
-
-    async def _disable_content_review_direct(
-        self, interaction: discord.Interaction
-    ) -> None:
-        """Disable content review via /disable-feature command."""
-        cr_cog = self._get_content_review_cog()
-        if not cr_cog:
-            await interaction.response.send_message(
-                _MSG_CONTENT_REVIEW_NOT_LOADED, ephemeral=True
-            )
-            return
-        await cr_cog.disable_feature(interaction, use_send=True)
-
 
 async def setup(bot: commands.Bot) -> None:
     """Setup function for loading as an extension."""

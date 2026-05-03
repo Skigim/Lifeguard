@@ -4,6 +4,7 @@ import inspect
 import logging
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import discord
 from discord import app_commands
@@ -11,8 +12,21 @@ from discord.ext import commands
 
 from lifeguard import __version__
 from lifeguard.config import Config
+from lifeguard.features.bootstrap import register_module_features
+
+if TYPE_CHECKING:
+    import aiohttp
+    from google.cloud.firestore import Client as FirestoreClient
+
+    from lifeguard.features.registry import FeatureRegistry
 
 LOGGER = logging.getLogger(__name__)
+
+
+class LifeguardBot(commands.Bot):
+    lifeguard_http_session: aiohttp.ClientSession
+    lifeguard_firestore: FirestoreClient
+    lifeguard_features: FeatureRegistry
 
 
 def _get_repo_root() -> Path:
@@ -94,12 +108,12 @@ async def _sync_commands(bot: commands.Bot, config: Config) -> None:
     )
 
 
-def create_bot(config: Config) -> commands.Bot:
+def create_bot(config: Config) -> LifeguardBot:
     intents = discord.Intents.default()
     intents.message_content = True
     intents.voice_states = True
 
-    bot = commands.Bot(command_prefix=config.command_prefix, intents=intents)
+    bot = LifeguardBot(command_prefix=config.command_prefix, intents=intents)
     bot._commands_synced = False  # type: ignore[attr-defined]
 
     @bot.event
@@ -147,10 +161,8 @@ def create_bot(config: Config) -> commands.Bot:
         bot.lifeguard_firestore = firestore_client  # type: ignore[attr-defined]
 
         await bot.add_cog(_load_core_cog(bot))
+        bot.lifeguard_features = await register_module_features(bot)  # type: ignore[attr-defined]
         await bot.add_cog(_load_config_cog(bot))
-        await bot.add_cog(_load_content_review_cog(bot))
-        await bot.add_cog(_load_time_impersonator_cog(bot))
-        await bot.add_cog(_load_voice_lobby_cog(bot))
 
     original_close = bot.close
 
@@ -183,21 +195,3 @@ def _load_config_cog(bot: commands.Bot) -> commands.Cog:
     from lifeguard.cogs.config_cog import ConfigCog
 
     return ConfigCog(bot)
-
-
-def _load_content_review_cog(bot: commands.Bot) -> commands.Cog:
-    from lifeguard.modules.content_review.cog import ContentReviewCog
-
-    return ContentReviewCog(bot)
-
-
-def _load_time_impersonator_cog(bot: commands.Bot) -> commands.Cog:
-    from lifeguard.modules.time_impersonator.cog import TimeImpersonatorCog
-
-    return TimeImpersonatorCog(bot)
-
-
-def _load_voice_lobby_cog(bot: commands.Bot) -> commands.Cog:
-    from lifeguard.modules.voice_lobby.cog import VoiceLobbyCog
-
-    return VoiceLobbyCog(bot)
