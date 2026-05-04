@@ -25,8 +25,8 @@ LOGGER = logging.getLogger(__name__)
 
 class LifeguardBot(commands.Bot):
     lifeguard_http_session: aiohttp.ClientSession
-    lifeguard_firestore: FirestoreClient
-    lifeguard_features: FeatureRegistry
+    lifeguard_firestore: FirestoreClient | None
+    lifeguard_features: FeatureRegistry | None
 
 
 def _get_repo_root() -> Path:
@@ -161,6 +161,13 @@ def create_bot(config: Config) -> LifeguardBot:
         bot.lifeguard_firestore = firestore_client  # type: ignore[attr-defined]
 
         await bot.add_cog(_load_core_cog(bot))
+        if firestore_client is None:
+            bot.lifeguard_features = None  # type: ignore[attr-defined]
+            LOGGER.warning(
+                "Firestore is disabled; skipping Firestore-backed config and module features"
+            )
+            return
+
         bot.lifeguard_features = await register_module_features(bot)  # type: ignore[attr-defined]
         await bot.add_cog(_load_config_cog(bot))
 

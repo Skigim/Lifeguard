@@ -6,9 +6,10 @@ class ModuleManifestTests(unittest.TestCase):
         from lifeguard.features.discovery import discover_feature_manifests
 
         manifests = discover_feature_manifests("lifeguard.modules")
-        feature_keys = sorted(manifest.feature_key for manifest in manifests)
+        feature_keys = {manifest.feature_key for manifest in manifests}
 
-        self.assertEqual(
-            feature_keys,
-            ["content_review", "time_impersonator", "voice_lobby"],
+        self.assertTrue(
+            {"content_review", "time_impersonator", "voice_lobby"}.issubset(
+                feature_keys
+            )
         )

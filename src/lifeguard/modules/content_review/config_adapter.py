@@ -1,22 +1,21 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import cast
 
 import discord
 from discord.ext import commands
 
+from lifeguard.features.adapters import CogBackedConfigAdapter
 from lifeguard.modules.content_review.cog import ContentReviewCog
 
 
-class ContentReviewConfigAdapter:
+class ContentReviewConfigAdapter(CogBackedConfigAdapter[ContentReviewCog]):
     def __init__(self, bot: commands.Bot) -> None:
-        self._cog = cast(ContentReviewCog | None, bot.get_cog("ContentReviewCog"))
-
-    def _require_cog(self) -> ContentReviewCog:
-        if self._cog is None:
-            raise RuntimeError("ContentReviewCog is not loaded")
-        return self._cog
+        super().__init__(
+            bot,
+            cog_name="ContentReviewCog",
+            missing_cog_message="ContentReviewCog is not loaded",
+        )
 
     async def show_menu(
         self,

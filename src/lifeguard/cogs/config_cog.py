@@ -17,6 +17,7 @@ from lifeguard.cogs.config_views import (
     RemoveBotAdminRoleView,
 )
 from lifeguard.features.availability import FeatureEntry, resolve_feature_entries
+from lifeguard.features.contracts import SetupFeatureConfigAdapter
 from lifeguard.features.registry import FeatureRegistry
 from lifeguard.guild_settings import (
     get_guild_settings,
@@ -195,6 +196,10 @@ class ConfigCog(commands.Cog):
         self._remember_feature(interaction.guild.id, feature)
 
         if manifest.requires_setup:
+            if not isinstance(adapter, SetupFeatureConfigAdapter):
+                raise RuntimeError(
+                    f"Feature '{feature}' requires setup but its adapter does not implement show_setup"
+                )
             await adapter.show_setup(
                 interaction,
                 on_back_to_home=self._show_config_home,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 import discord
 from discord.ext import commands
@@ -38,14 +38,16 @@ class FeatureConfigAdapter(Protocol):
         use_send: bool = False,
     ) -> None: ...
 
+
+@runtime_checkable
+class SetupFeatureConfigAdapter(FeatureConfigAdapter, Protocol):
     async def show_setup(
         self,
         interaction: discord.Interaction,
         *,
         on_back_to_home: Callable[[discord.Interaction], Awaitable[None]],
         use_send: bool = False,
-    ) -> None:
-        raise NotImplementedError
+    ) -> None: ...
 
 
 @dataclass(frozen=True)
