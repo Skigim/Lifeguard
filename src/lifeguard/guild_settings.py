@@ -16,11 +16,13 @@ class GuildSettings:
 
     guild_id: int
     bot_admin_role_ids: list[int] = field(default_factory=list)
+    known_feature_keys: list[str] = field(default_factory=list)
 
     def to_firestore(self) -> dict:
         return {
             "guild_id": self.guild_id,
             "bot_admin_role_ids": self.bot_admin_role_ids,
+            "known_feature_keys": self.known_feature_keys,
         }
 
     @classmethod
@@ -28,7 +30,15 @@ class GuildSettings:
         return cls(
             guild_id=data["guild_id"],
             bot_admin_role_ids=data.get("bot_admin_role_ids", []),
+            known_feature_keys=data.get("known_feature_keys", []),
         )
+
+
+def remember_feature_key(settings: GuildSettings, feature_key: str) -> GuildSettings:
+    if feature_key not in settings.known_feature_keys:
+        settings.known_feature_keys.append(feature_key)
+        settings.known_feature_keys.sort()
+    return settings
 
 
 def get_guild_settings(

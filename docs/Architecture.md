@@ -43,8 +43,12 @@ Firestore Client
 Creates the discord.py `Bot` instance with:
 - Intent configuration
 - Event handlers (`on_ready`, `setup_hook`, `close`)
-- Cog registration
+- Core cog registration plus manifest-driven module bootstrap
 - Shared resources (HTTP session, Firestore client)
+
+During `setup_hook`, Lifeguard discovers feature manifests under `lifeguard.modules`,
+builds a `FeatureRegistry`, stores it on `bot.lifeguard_features`, and loads each
+module cog through its manifest factory.
 
 ### Configuration (`config.py`)
 Frozen dataclass loaded from environment:
@@ -73,40 +77,34 @@ Bot instance carries shared resources as attributes:
 - `bot.lifeguard_http_session` - aiohttp session for API calls
 - `bot.lifeguard_firestore` - Firestore client
 
-## Central Configuration Menu (`/config`)
+## Feature Registry and Shared Config Shell
 
-All feature management flows through the `/config` slash command, which is
-hosted in `ConfigCog` (`cogs/config_cog.py`). The menu hierarchy:
+All feature management still flows through `/config`, `/enable-feature`, and
+`/disable-feature`, but the central shell is now registry-backed instead of
+hardcoded.
 
-```
-/config
-├── General Settings        → Bot admin roles
-├── Content Review          → Enable/disable, sticky, roles, form, settings
-├── Time Impersonator       → Enable/disable, status
-└── Voice Lobby             → Enable/disable, entry channel, defaults, roles
-```
+### Runtime flow
+1. `lifeguard.features.discovery` scans `lifeguard.modules` for `manifest.py`.
+2. `lifeguard.features.registry.FeatureRegistry` indexes discovered manifests.
+3. `lifeguard.features.bootstrap.register_module_features()` loads module cogs.
+4. `ConfigCog` resolves feature metadata, autocomplete, and adapters from the registry.
+5. Feature-specific configuration UI stays inside each module package.
 
-### Key principles
-1. **Every module gets a sub-menu** — each feature is wired into
-   `ConfigFeatureSelectView` as its own button.
-2. **Enable/disable lives inside the sub-menu** — users can toggle a feature
-   on or off from within its config page. No feature blocks access to its
-   own config when disabled; instead it shows an "Enable" action.
-3. **`/enable-feature` and `/disable-feature` are convenience shortcuts** —
-   they provide quick autocomplete-driven access but ultimately call the
-   same enable/disable helpers used by the config UI.
-4. **Config views call back to the cog** — all views hold a reference to the
-   cog and delegate logic to `_show_*` / `_enable_*` / `_disable_*` methods.
+### Availability resolution
 
-### Adding a new feature to the config menu
-See `docs/ModuleDevelopment.md` § "Wiring into the Config Menu".
+`lifeguard.features.availability.resolve_feature_entries()` combines discovered
+manifests with `GuildSettings.known_feature_keys` so the shared shell can still
+represent previously configured modules that are no longer installed.
+
+Unavailable historical entries remain visible to the shell as unavailable rather
+than disappearing silently.
 
 ## Feature Flags
 Guild-level feature toggles stored in Firestore:
 - Each module has its own config collection (`content_review_configs`, `voice_lobby_configs`, etc.)
 - Checked via decorators (`@require_content_review()`, `@require_time_impersonator()`)
 - Raise `FeatureDisabledError` when disabled
-- Toggled via the `/config` sub-menus or the `/enable-feature` / `/disable-feature` shortcuts
+- Toggled via module-owned config adapters behind `/config` or the `/enable-feature` / `/disable-feature` shortcuts
 
 ## Database Layers
 

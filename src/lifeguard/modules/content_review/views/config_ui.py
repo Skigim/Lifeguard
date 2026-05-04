@@ -25,9 +25,15 @@ if TYPE_CHECKING:
 class ContentReviewSetupView(discord.ui.View):
     """View for setting up content review."""
 
-    def __init__(self, cog: "ContentReviewCog") -> None:
+    def __init__(
+        self,
+        cog: "ContentReviewCog",
+        *,
+        on_back_to_home: Callable[[discord.Interaction], Awaitable[None]] | None = None,
+    ) -> None:
         super().__init__(timeout=120)
         self.cog = cog
+        self._on_back_to_home = on_back_to_home
 
     @discord.ui.button(label="Configure & Enable", style=discord.ButtonStyle.success)
     async def configure_button(
@@ -35,10 +41,13 @@ class ContentReviewSetupView(discord.ui.View):
     ) -> None:
         await interaction.response.send_modal(EnableContentReviewModal(self.cog))
 
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary)
     async def cancel_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
+        if self._on_back_to_home is not None:
+            await self._on_back_to_home(interaction)
+            return
         await interaction.response.edit_message(
             content="Setup cancelled.", embed=None, view=None
         )

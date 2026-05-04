@@ -6,17 +6,19 @@ This guide explains how to create a new feature module for Lifeguard.
 
 1. Create the module folder: `src/lifeguard/modules/<name>/`
 2. Add the required files (see structure below)
-3. Register the cog in `bot.py`
+3. Add a `manifest.py` file that exports `FEATURE_MANIFEST`
 
 ## Module Structure
 
 ```
 modules/<name>/
 ├── __init__.py         # Exports
+├── manifest.py         # Feature registry metadata
 ├── cog.py              # Discord commands
 ├── models.py           # Data models
 ├── repo.py             # Firestore operations
 ├── config.py           # Module settings (optional)
+├── config_adapter.py   # Shared-shell adapter (optional for toggleable features)
 └── views/              # UI components (optional)
     ├── __init__.py
     └── my_modal.py
@@ -166,22 +168,26 @@ class <Name>Cog(commands.Cog):
         await interaction.response.send_message("Done!", ephemeral=True)
 ```
 
-### 5. Register in `bot.py`
+### 5. Register through `manifest.py`
 
-Add loader function and register in `setup_hook`:
+Modules are discovered automatically. Export a `FEATURE_MANIFEST` instead of
+editing `bot.py` or `ConfigCog`.
 
 ```python
-# At module level
-def _load_<name>_cog(bot: commands.Bot) -> <Name>Cog:
-    from lifeguard.modules.<name>.cog import <Name>Cog
-    return <Name>Cog(bot)
+from lifeguard.features.contracts import FeatureManifest
+from lifeguard.modules.<name>.cog import <Name>Cog
 
 
-# In setup_hook
-@bot.event
-async def setup_hook() -> None:
-    # ... existing setup ...
-    await bot.add_cog(_load_<name>_cog(bot))
+FEATURE_MANIFEST = FeatureManifest(
+    feature_key="<name>",
+    display_name="<Name>",
+    description="Brief description",
+    emoji="🔧",
+    requires_setup=False,
+    cog_name="<Name>Cog",
+    load_cog=lambda bot: <Name>Cog(bot),
+    build_adapter=lambda bot: <Name>ConfigAdapter(bot),
+)
 ```
 
 ## Optional: Feature Flags
@@ -279,54 +285,48 @@ async def my_command(self, interaction: discord.Interaction) -> None:
 ### 5. Wiring into the Config Menu
 
 All feature management still starts from the central `/config` command,
-but `ConfigCog` should stay a thin router. Feature-specific config behavior
-belongs in the feature cog, not in `cogs/config_cog.py` or
+but `ConfigCog` stays a thin registry-backed router. Feature-specific config
+behavior belongs in the feature module, not in `cogs/config_cog.py` or
 `cogs/config_views.py`.
 
 Use this split of responsibilities:
 
-1. `ConfigFeatureSelectView` exposes the feature entrypoint.
-2. `ConfigCog` resolves the feature cog and delegates.
-3. The feature cog owns status, enable, disable, setup, and custom config flows.
-4. Feature-specific views stay under `modules/<name>/views/`.
+1. `ConfigHomeView` renders discovered feature entries from the registry.
+2. `ConfigCog` resolves a feature adapter from `bot.lifeguard_features` and delegates.
+3. The feature adapter translates shared-shell actions into module-owned flows.
+4. The feature cog owns status, enable, disable, setup, and custom config flows.
+5. Feature-specific views stay under `modules/<name>/views/`.
 
-#### a) Add the feature to the shared menu
+#### a) Implement a shared-shell adapter
 
-```python
-@discord.ui.button(
-    label="<Name>",
-    style=discord.ButtonStyle.secondary,
-    emoji="🔧",
-    row=<row>,
-)
-async def <name>_button(
-    self, interaction: discord.Interaction, button: discord.ui.Button
-) -> None:
-    await self.cog._show_<name>_menu(interaction)
-```
-
-#### b) Define a feature-facing interface when needed
-
-If the shared shell needs to call feature-owned config operations, add or
-implement a protocol in `lifeguard/feature_interfaces.py`.
+If the feature participates in `/config`, implement the `FeatureConfigAdapter`
+contract from `lifeguard.features.contracts`.
 
 ```python
-class SupportsConfigToggle(Protocol):
-    async def show_config_status(
+class <Name>ConfigAdapter:
+    async def show_menu(
         self,
         interaction: discord.Interaction,
         *,
-        view: discord.ui.View,
+        on_back_to_home: Callable[[discord.Interaction], Awaitable[None]],
     ) -> None: ...
 
-    async def enable_feature(
+    async def show_status(
         self,
         interaction: discord.Interaction,
         *,
+        on_back_to_home: Callable[[discord.Interaction], Awaitable[None]],
+    ) -> None: ...
+
+    async def enable(
+        self,
+        interaction: discord.Interaction,
+        *,
+        on_back_to_home: Callable[[discord.Interaction], Awaitable[None]] | None = None,
         use_send: bool = False,
     ) -> None: ...
 
-    async def disable_feature(
+    async def disable(
         self,
         interaction: discord.Interaction,
         *,
@@ -334,50 +334,27 @@ class SupportsConfigToggle(Protocol):
     ) -> None: ...
 ```
 
-Define a feature-specific protocol instead when the module needs richer setup
-or navigation hooks.
-
-#### c) Keep `ConfigCog` focused on delegation
+#### b) Keep `ConfigCog` focused on delegation
 
 ```python
-async def _show_<name>_menu(self, interaction: discord.Interaction) -> None:
-    feature_cog = self._get_<name>_cog()
-    if feature_cog is None:
+async def _dispatch_feature_menu(self, interaction: discord.Interaction, feature_key: str) -> None:
+    manifest = self.feature_registry.get_manifest(feature_key)
+    adapter = self.feature_registry.build_adapter(self.bot, feature_key)
+    if manifest is None or adapter is None:
         await interaction.response.edit_message(
-            content="<Name> module is not loaded.",
+            content=f"{feature_key.replace('_', ' ').title()} is not currently installed.",
             embed=None,
             view=None,
         )
         return
 
-    await feature_cog.show_config_menu(
-        interaction,
-        on_back_to_home=self._show_config_home,
-    )
-
-async def _show_<name>_status(self, interaction: discord.Interaction) -> None:
-    feature_cog = self._get_<name>_cog()
-    if feature_cog is None:
-        await interaction.response.edit_message(
-            content="<Name> module is not loaded.",
-            embed=None,
-            view=None,
-        )
-        return
-
-    await feature_cog.show_config_status(
-        interaction,
-        view=<Name>ConfigView(
-            feature_cog,
-            on_back_to_home=self._show_config_home,
-        ),
-    )
+    await adapter.show_menu(interaction, on_back_to_home=self._show_config_home)
 ```
 
 `ConfigCog` can still own shared, generic views. It should not directly import a
 feature repo or implement feature-specific persistence logic.
 
-#### d) Keep feature UI inside the feature module
+#### c) Keep feature UI inside the feature module
 
 If the feature needs a custom sub-menu or nested views, keep them under
 `modules/<name>/views/` and route back-navigation through callbacks or methods
@@ -387,12 +364,12 @@ provided by the feature cog.
 class <Name>ConfigView(discord.ui.View):
     def __init__(
         self,
-        cog: "<Name>Cog",
+        adapter: "<Name>ConfigAdapter",
         *,
         on_back_to_home: Callable[[discord.Interaction], Awaitable[None]],
     ) -> None:
         super().__init__(timeout=120)
-        self.cog = cog
+        self.adapter = adapter
         self._on_back_to_home = on_back_to_home
 
     @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, emoji="↩️")
@@ -402,23 +379,13 @@ class <Name>ConfigView(discord.ui.View):
         await self._on_back_to_home(interaction)
 ```
 
-Feature views may call their own feature cog, but they should not resolve
-`ConfigCog` or any other feature cog directly.
+Feature views may call their own feature adapter or feature cog, but they should
+not resolve `ConfigCog` or any other feature directly.
 
-#### e) Register in the feature registry
+#### d) Keep `__init__.py` lightweight
 
-Add your feature to the `FEATURES` list in `cogs/config_cog.py` so `enable-feature`
-and `disable-feature` autocomplete picks it up:
-
-```python
-FEATURES: list[tuple[str, str, str, bool]] = [
-    # ... existing ...
-    ("<name>", "<Name>", "Brief description", False),
-]
-```
-
-Then add the corresponding `elif` branches in `enable_feature_command`
-and `disable_feature_command`.
+Discovery imports `manifest.py` directly. Keep `modules/<name>/__init__.py`
+lightweight and avoid importing cogs, repos, or any heavy initialization there.
 
 ## Optional: Discord UI Components
 
@@ -443,3 +410,4 @@ class MyModal(discord.ui.Modal, title="Submit"):
 1. Set `FIREBASE_ENABLED=true` in `.env`
 2. Run the bot: `python -m lifeguard`
 3. Test commands in your dev guild
+4. Verify manifest discovery: `python -m unittest discover -s tests -p 'test_module_manifests.py' -v`
