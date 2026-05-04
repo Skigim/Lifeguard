@@ -42,7 +42,9 @@ def build_feature_autocomplete_choices(
         if entry.status != "available":
             continue
         haystacks = (entry.feature_key.lower(), entry.display_name.lower())
-        if current_lower and not any(current_lower in haystack for haystack in haystacks):
+        if current_lower and not any(
+            current_lower in haystack for haystack in haystacks
+        ):
             continue
         matches.append(
             app_commands.Choice(
@@ -102,9 +104,11 @@ class ConfigCog(commands.Cog):
         settings = get_or_create_guild_settings(self.firestore, guild_id)
         changed = False
         for manifest in self.feature_registry.all_manifests():
-            document = self.firestore.collection(
-                f"{manifest.feature_key}_configs"
-            ).document(str(guild_id)).get()
+            document = (
+                self.firestore.collection(f"{manifest.feature_key}_configs")
+                .document(str(guild_id))
+                .get()
+            )
             if not document.exists:
                 continue
             before = list(settings.known_feature_keys)
@@ -439,6 +443,7 @@ class ConfigCog(commands.Cog):
             view=BackToGeneralView(self),
         )
         LOGGER.info("Cleared bot admin roles: guild=%s", interaction.guild.id)
+
 
 async def setup(bot: commands.Bot) -> None:
     """Setup function for loading as an extension."""

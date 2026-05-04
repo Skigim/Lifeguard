@@ -9,7 +9,9 @@ from lifeguard.features.contracts import FeatureManifest
 LOGGER = logging.getLogger(__name__)
 
 
-def discover_feature_manifests(package_name: str = "lifeguard.modules") -> list[FeatureManifest]:
+def discover_feature_manifests(
+    package_name: str = "lifeguard.modules",
+) -> list[FeatureManifest]:
     package = importlib.import_module(package_name)
     manifests: list[FeatureManifest] = []
 

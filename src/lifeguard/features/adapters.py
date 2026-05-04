@@ -52,7 +52,9 @@ class CogBackedConfigAdapter(Generic[CogT]):
         return self._cog
 
 
-class StatusMenuConfigAdapter(CogBackedConfigAdapter[StatusCogT], Generic[StatusCogT, ViewT]):
+class StatusMenuConfigAdapter(
+    CogBackedConfigAdapter[StatusCogT], Generic[StatusCogT, ViewT]
+):
     def __init__(
         self,
         bot: commands.Bot,
@@ -66,7 +68,9 @@ class StatusMenuConfigAdapter(CogBackedConfigAdapter[StatusCogT], Generic[Status
             cog_name=cog_name,
             missing_cog_message=missing_cog_message,
         )
-        self._on_back_to_home: Callable[[discord.Interaction], Awaitable[None]] | None = None
+        self._on_back_to_home: (
+            Callable[[discord.Interaction], Awaitable[None]] | None
+        ) = None
         self._missing_callback_message = missing_callback_message
 
     def _remember_on_back_to_home(

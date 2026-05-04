@@ -286,7 +286,9 @@ class ContentReviewCog(commands.Cog):
                 description="Content Review is **not enabled**. Enable it to get started.",
                 color=discord.Color.greyple(),
             )
-            await interaction.response.edit_message(embed=embed, view=disabled_view, content=None)
+            await interaction.response.edit_message(
+                embed=embed, view=disabled_view, content=None
+            )
             return
 
         await self._show_content_review_config(interaction)
