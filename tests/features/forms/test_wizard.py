@@ -51,11 +51,56 @@ class FormWizardHelperTests(unittest.TestCase):
 
         self.assertEqual(error, "Clip doesn't match the required format.")
 
-    def test_build_summary_lines_formats_scalar_and_multi_select_values(self) -> None:
+    def test_build_summary_lines_use_category_names_and_user_facing_labels(self) -> None:
         from lifeguard.features.forms.models import FormCategoryResponse
+        from lifeguard.features.forms.schema import (
+            BooleanOptions,
+            ChoiceOption,
+            FormCategory,
+            SelectOptions,
+            ScoreOptions,
+        )
         from lifeguard.features.forms.wizard import build_summary_lines
 
         lines = build_summary_lines(
+            [
+                FormCategory(
+                    id="overall",
+                    name="Overall Score",
+                    response_kind="score",
+                    options=ScoreOptions(min_value=1, max_value=5, allow_note=True),
+                ),
+                FormCategory(
+                    id="approved",
+                    name="Approval",
+                    response_kind="boolean",
+                    options=BooleanOptions(true_label="Pass", false_label="Needs Work"),
+                ),
+                FormCategory(
+                    id="status",
+                    name="Status",
+                    response_kind="single_select",
+                    options=SelectOptions(
+                        choices=[
+                            ChoiceOption(id="ready", label="Ready to Publish"),
+                            ChoiceOption(id="blocked", label="Blocked"),
+                        ]
+                    ),
+                ),
+                FormCategory(
+                    id="tags",
+                    name="Highlights",
+                    response_kind="multi_select",
+                    options=SelectOptions(
+                        choices=[
+                            ChoiceOption(id="clear", label="Clear"),
+                            ChoiceOption(id="concise", label="Concise"),
+                        ],
+                        min_selected=1,
+                        max_selected=2,
+                    ),
+                ),
+            ],
             [
                 FormCategoryResponse(
                     category_id="overall",
@@ -69,6 +114,11 @@ class FormWizardHelperTests(unittest.TestCase):
                     value=True,
                 ),
                 FormCategoryResponse(
+                    category_id="status",
+                    response_kind="single_select",
+                    value="ready",
+                ),
+                FormCategoryResponse(
                     category_id="tags",
                     response_kind="multi_select",
                     value=["clear", "concise"],
@@ -79,9 +129,10 @@ class FormWizardHelperTests(unittest.TestCase):
         self.assertEqual(
             lines,
             [
-                "overall: 5 (Ready)",
-                "approved: Yes",
-                "tags: clear, concise",
+                "Overall Score: 5 (Ready)",
+                "Approval: Pass",
+                "Status: Ready to Publish",
+                "Highlights: Clear, Concise",
             ],
         )
 
@@ -155,6 +206,94 @@ class FormSubmissionModalTests(unittest.IsolatedAsyncioTestCase):
 
 
 class FormWizardViewTests(unittest.IsolatedAsyncioTestCase):
+    async def test_boolean_select_uses_schema_labels(self) -> None:
+        from lifeguard.features.forms.models import FormResponseSession
+        from lifeguard.features.forms.schema import BooleanOptions, FormCategory
+        from lifeguard.features.forms.wizard import FormWizardView
+
+        view = FormWizardView(
+            categories=[
+                FormCategory(
+                    id="approved",
+                    name="Approval",
+                    response_kind="boolean",
+                    required=True,
+                    options=BooleanOptions(true_label="Pass", false_label="Needs Work"),
+                )
+            ],
+            session=FormResponseSession(
+                id="session-1",
+                guild_id=1,
+                feature_key="shared_forms",
+                owner_id="submission-1",
+                responder_id=2,
+            ),
+            on_publish_callback=AsyncMock(),
+        )
+
+        select = next(item for item in view.children if isinstance(item, discord.ui.Select))
+
+        self.assertEqual([option.label for option in select.options], ["Pass", "Needs Work"])
+
+    async def test_score_category_with_allow_note_supports_note_and_reference_details(self) -> None:
+        from lifeguard.features.forms.models import FormResponseSession
+        from lifeguard.features.forms.schema import FormCategory, ScoreOptions
+        from lifeguard.features.forms.wizard import FormWizardView
+
+        view = FormWizardView(
+            categories=[
+                FormCategory(
+                    id="overall",
+                    name="Overall",
+                    response_kind="score",
+                    required=True,
+                    options=ScoreOptions(min_value=1, max_value=5, allow_note=True),
+                )
+            ],
+            session=FormResponseSession(
+                id="session-1",
+                guild_id=1,
+                feature_key="shared_forms",
+                owner_id="submission-1",
+                responder_id=2,
+            ),
+            on_publish_callback=AsyncMock(),
+        )
+
+        select_interaction = MagicMock()
+        select_interaction.data = {"values": ["4"]}
+        select_interaction.response.edit_message = AsyncMock()
+
+        await view._on_select_submit(select_interaction)
+
+        details_button = next(
+            item
+            for item in view.children
+            if isinstance(item, discord.ui.Button) and item.custom_id == "wizard_open_modal"
+        )
+        self.assertEqual(details_button.label, "Add Details")
+
+        open_modal_interaction = MagicMock()
+        open_modal_interaction.response.send_modal = AsyncMock()
+
+        await view._on_open_modal(open_modal_interaction)
+
+        modal = open_modal_interaction.response.send_modal.await_args.args[0]
+        self.assertEqual(set(modal._field_inputs), {"reference", "note"})
+
+        modal._field_inputs["reference"]._value = "Clip 00:12"
+        modal._field_inputs["note"]._value = "Needs a stronger hook"
+        modal_interaction = MagicMock()
+        modal_interaction.response.edit_message = AsyncMock()
+
+        await modal.on_submit(modal_interaction)
+
+        response = view._response_for("overall")
+        self.assertIsNotNone(response)
+        self.assertEqual(response.value, 4)
+        self.assertEqual(response.reference, "Clip 00:12")
+        self.assertEqual(response.note, "Needs a stronger hook")
+
     async def test_wizard_view_tracks_current_step_and_disables_progress_for_missing_required_response(
         self,
     ) -> None:

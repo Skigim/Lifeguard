@@ -9,6 +9,7 @@ import discord
 
 from lifeguard.features.forms.models import FormCategoryResponse, FormResponseSession
 from lifeguard.features.forms.schema import (
+    BooleanOptions,
     FormCategory,
     FormField,
     NoteOptions,
@@ -23,11 +24,32 @@ def _is_empty_value(value: int | str | bool | list[str] | None) -> bool:
     return value is None or value == "" or value == []
 
 
-def _response_label(response: FormCategoryResponse) -> str:
+def _select_choice_label(options: SelectOptions, value: str) -> str:
+    for choice in options.choices:
+        if choice.id == value:
+            return choice.label
+    return value
+
+
+def _response_label(category: FormCategory | None, response: FormCategoryResponse) -> str:
     value = response.value
     if response.response_kind == "boolean":
+        if category is not None:
+            options = cast(BooleanOptions, category.options)
+            return options.true_label if cast(bool, value) else options.false_label
         return "Yes" if cast(bool, value) else "No"
+    if response.response_kind == "single_select":
+        if category is not None:
+            options = cast(SelectOptions, category.options)
+            return _select_choice_label(options, cast(str, value))
+        return str(value)
     if response.response_kind == "multi_select":
+        if category is not None:
+            options = cast(SelectOptions, category.options)
+            return ", ".join(
+                _select_choice_label(options, selected)
+                for selected in cast(list[str], value)
+            )
         return ", ".join(cast(list[str], value))
     return str(value)
 
@@ -90,10 +112,16 @@ def validate_category_response(
     return None
 
 
-def build_summary_lines(responses: list[FormCategoryResponse]) -> list[str]:
+def build_summary_lines(
+    categories: list[FormCategory],
+    responses: list[FormCategoryResponse],
+) -> list[str]:
+    categories_by_id = {category.id: category for category in categories}
     lines: list[str] = []
     for response in responses:
-        line = f"{response.category_id}: {_response_label(response)}"
+        category = categories_by_id.get(response.category_id)
+        category_name = category.name if category is not None else response.category_id
+        line = f"{category_name}: {_response_label(category, response)}"
         if response.note.strip():
             line = f"{line} ({response.note.strip()})"
         lines.append(line)
@@ -181,9 +209,15 @@ class FormWizardView(discord.ui.View):
         if response is not None and not _is_empty_value(response.value):
             embed.add_field(
                 name="Current Response",
-                value=_response_label(response),
+                value=_response_label(category, response),
                 inline=False,
             )
+            if response.note.strip():
+                embed.add_field(
+                    name="Note",
+                    value=response.note.strip(),
+                    inline=False,
+                )
             if response.reference.strip():
                 embed.add_field(
                     name="Reference",
@@ -198,13 +232,31 @@ class FormWizardView(discord.ui.View):
         return embed
 
     def _build_summary_embed(self) -> discord.Embed:
-        lines = build_summary_lines(self.session.responses)
+        lines = build_summary_lines(self.categories, self.session.responses)
         description = "\n".join(lines) if lines else "No responses recorded."
         return discord.Embed(
             title="Form Summary",
             description=description,
             color=discord.Color.green(),
         )
+
+    def _supports_detail_modal(self, category: FormCategory) -> bool:
+        if category.response_kind in {"text", "note"}:
+            return True
+        if category.response_kind == "score":
+            options = cast(ScoreOptions, category.options)
+            return options.allow_note and self._response_for(category.id) is not None
+        return False
+
+    def _modal_button_label(self, category: FormCategory) -> str:
+        response = self._response_for(category.id)
+        if category.response_kind == "score":
+            if response is not None and (
+                response.note.strip() or response.reference.strip()
+            ):
+                return "Edit Details"
+            return "Add Details"
+        return "Edit Response" if response is not None else "Add Response"
 
     def _add_category_components(self) -> None:
         category = self.current_category
@@ -213,9 +265,9 @@ class FormWizardView(discord.ui.View):
 
         if category.response_kind in {"score", "boolean", "single_select", "multi_select"}:
             self.add_item(self._build_select(category))
-        else:
+        if self._supports_detail_modal(category):
             response_button = discord.ui.Button(
-                label="Edit Response" if self._response_for(category.id) else "Add Response",
+                label=self._modal_button_label(category),
                 style=discord.ButtonStyle.secondary,
                 custom_id="wizard_open_modal",
             )
@@ -301,10 +353,19 @@ class FormWizardView(discord.ui.View):
                 for value in range(score_options.min_value, score_options.max_value + 1)
             ]
         elif category.response_kind == "boolean":
+            boolean_options = cast(BooleanOptions, category.options)
             selected = response.value if response is not None else None
             options = [
-                discord.SelectOption(label="Yes", value="true", default=(selected is True)),
-                discord.SelectOption(label="No", value="false", default=(selected is False)),
+                discord.SelectOption(
+                    label=boolean_options.true_label,
+                    value="true",
+                    default=(selected is True),
+                ),
+                discord.SelectOption(
+                    label=boolean_options.false_label,
+                    value="false",
+                    default=(selected is False),
+                ),
             ]
         else:
             select_options = cast(SelectOptions, category.options)
@@ -333,7 +394,6 @@ class FormWizardView(discord.ui.View):
         return select
 
     def _modal_fields_for_category(self, category: FormCategory) -> list[FormField]:
-        response = self._response_for(category.id)
         if category.response_kind == "text":
             options = cast(TextOptions, category.options)
             field_type = "paragraph" if options.style == "paragraph" else "short_text"
@@ -346,6 +406,24 @@ class FormWizardView(discord.ui.View):
                     placeholder=options.placeholder,
                     validation_regex=options.validation_regex,
                 )
+            ]
+
+        if category.response_kind == "score":
+            return [
+                FormField(
+                    id="reference",
+                    label=f"{category.name} Reference",
+                    field_type="short_text",
+                    required=False,
+                    placeholder="Add context or evidence",
+                ),
+                FormField(
+                    id="note",
+                    label=f"{category.name} Note",
+                    field_type="paragraph",
+                    required=False,
+                    placeholder="Add supporting detail",
+                ),
             ]
 
         note_options = cast(NoteOptions, category.options)
@@ -366,8 +444,6 @@ class FormWizardView(discord.ui.View):
                 placeholder=note_options.placeholder,
             ),
         ]
-        if response is not None:
-            return fields
         return fields
 
     async def _on_select_submit(self, interaction: discord.Interaction) -> None:
@@ -410,13 +486,27 @@ class FormWizardView(discord.ui.View):
             modal_interaction: discord.Interaction,
             field_values: dict[str, str],
         ) -> None:
-            self._upsert_response(
-                FormCategoryResponse(
+            existing = self._response_for(category.id)
+            if category.response_kind == "score":
+                if existing is None:
+                    return
+                response = FormCategoryResponse(
+                    category_id=category.id,
+                    response_kind=category.response_kind,
+                    value=existing.value,
+                    note=field_values.get("note", ""),
+                    reference=field_values.get("reference", ""),
+                )
+            else:
+                response = FormCategoryResponse(
                     category_id=category.id,
                     response_kind=category.response_kind,
                     value=field_values.get("value", ""),
+                    note=existing.note if existing is not None else "",
                     reference=field_values.get("reference", ""),
                 )
+            self._upsert_response(
+                response
             )
             self._sync_components()
             await modal_interaction.response.edit_message(
