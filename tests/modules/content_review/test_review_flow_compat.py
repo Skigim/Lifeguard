@@ -92,6 +92,42 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(callable(shared_modal_cls.call_args.args[2]))
         interaction.response.send_modal.assert_awaited_once_with(sentinel_modal)
 
+    async def test_handle_submit_button_with_oversized_config_returns_ephemeral_error(self) -> None:
+        from lifeguard.modules.content_review.cog import ContentReviewCog
+
+        bot = SimpleNamespace(lifeguard_firestore=object())
+        cog = ContentReviewCog(bot)
+        config = self._build_config()
+        config.submission_fields = [
+            FormField(
+                id=f"field_{index}",
+                label=f"Field {index}",
+                field_type="short_text",
+                required=True,
+            )
+            for index in range(1, 7)
+        ]
+        interaction = self._build_interaction(
+            guild=SimpleNamespace(id=123),
+            user_id=456,
+            user_name="submitter",
+        )
+
+        with patch(
+            "lifeguard.modules.content_review.cog.repo.get_config",
+            return_value=config,
+        ):
+            try:
+                await cog._handle_submit_button(interaction)
+            except Exception as exc:  # pragma: no cover - red-phase guard
+                self.fail(f"_handle_submit_button raised unexpectedly: {exc!r}")
+
+        interaction.response.send_modal.assert_not_awaited()
+        interaction.response.send_message.assert_awaited_once_with(
+            "This submission form has too many fields to open in Discord. Please contact an administrator.",
+            ephemeral=True,
+        )
+
     async def test_start_review_uses_shared_form_wizard_with_session_draft(self) -> None:
         from lifeguard.modules.content_review.cog import ContentReviewCog
 

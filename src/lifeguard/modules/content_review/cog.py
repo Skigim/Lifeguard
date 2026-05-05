@@ -15,7 +15,11 @@ from discord.ext import commands
 from lifeguard.features.forms import repo as forms_repo
 from lifeguard.features.forms.models import FormResponseSession
 from lifeguard.features.forms.submission_modal import FormSubmissionModal
-from lifeguard.features.forms.schema import FormCategory, ScoreOptions
+from lifeguard.features.forms.schema import (
+    FormCategory,
+    InvalidFormSchemaError,
+    ScoreOptions,
+)
 from lifeguard.features.forms.wizard import FormWizardCopy, FormWizardView
 from lifeguard.modules.content_review import repo
 from lifeguard.modules.content_review.config import (
@@ -64,6 +68,10 @@ _MSG_NOT_CONFIGURED = "Not configured."
 _STATUS_ENABLED = "✅ Enabled"
 _STATUS_DISABLED = "❌ Disabled"
 _FEATURE_CONTENT_REVIEW = "Content Review"
+_MSG_SUBMISSION_FORM_TOO_LARGE = (
+    "This submission form has too many fields to open in Discord. "
+    "Please contact an administrator."
+)
 
 _ALLOWED_FIELD_TYPES = frozenset({"short_text", "paragraph", "url"})
 
@@ -1212,12 +1220,36 @@ class ContentReviewCog(commands.Cog):
             )
             return
 
+        await self._send_submission_modal(interaction, config)
+
+    async def _send_submission_modal(
+        self,
+        interaction: discord.Interaction,
+        config: ContentReviewConfig,
+    ) -> None:
         async def on_submit(
             modal_interaction: discord.Interaction, field_values: dict[str, str]
         ) -> None:
             await self._handle_submission(modal_interaction, config, field_values)
 
-        modal = FormSubmissionModal(config.modal_title, config.submission_fields, on_submit)
+        try:
+            modal = FormSubmissionModal(
+                config.modal_title,
+                config.submission_fields,
+                on_submit,
+            )
+        except InvalidFormSchemaError:
+            LOGGER.warning(
+                "Content review submission form exceeds Discord modal field limit: guild=%s fields=%s",
+                config.guild_id,
+                len(config.submission_fields),
+            )
+            await interaction.response.send_message(
+                _MSG_SUBMISSION_FORM_TOO_LARGE,
+                ephemeral=True,
+            )
+            return
+
         await interaction.response.send_modal(modal)
 
     async def _handle_submission(
@@ -1571,13 +1603,7 @@ class ContentReviewCog(commands.Cog):
             )
             return
 
-        async def on_submit(
-            modal_interaction: discord.Interaction, field_values: dict[str, str]
-        ) -> None:
-            await self._handle_submission(modal_interaction, config, field_values)
-
-        modal = FormSubmissionModal(config.modal_title, config.submission_fields, on_submit)
-        await interaction.response.send_modal(modal)
+        await self._send_submission_modal(interaction, config)
 
     async def _start_review(
         self, interaction: discord.Interaction, submission_id: str
