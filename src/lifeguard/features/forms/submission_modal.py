@@ -6,7 +6,9 @@ from typing import Any
 
 import discord
 
-from lifeguard.features.forms.schema import FormField
+from lifeguard.features.forms.schema import FormField, InvalidFormSchemaError
+
+_DISCORD_MODAL_MAX_FIELDS = 5
 
 
 def _to_text_style(field_type: str) -> discord.TextStyle:
@@ -44,7 +46,13 @@ class FormSubmissionModal(discord.ui.Modal):
         initial_values: dict[str, str] | None = None,
     ) -> None:
         super().__init__(title=title)
-        self.fields = fields[:5]
+        if len(fields) > _DISCORD_MODAL_MAX_FIELDS:
+            raise InvalidFormSchemaError(
+                "Form submission modals support at most "
+                f"{_DISCORD_MODAL_MAX_FIELDS} fields; received {len(fields)}."
+            )
+
+        self.fields = fields
         self.on_submit_callback = on_submit_callback
         self._field_inputs: dict[str, discord.ui.TextInput] = {}
 

@@ -138,6 +138,23 @@ class FormWizardHelperTests(unittest.TestCase):
 
 
 class FormSubmissionModalTests(unittest.IsolatedAsyncioTestCase):
+    async def test_modal_rejects_more_than_five_fields(self) -> None:
+        from lifeguard.features.forms.schema import FormField
+        from lifeguard.features.forms.submission_modal import FormSubmissionModal
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Form submission modals support at most 5 fields; received 6.",
+        ):
+            FormSubmissionModal(
+                title="Submit",
+                fields=[
+                    FormField(id=f"field_{index}", label=f"Field {index}")
+                    for index in range(6)
+                ],
+                on_submit_callback=AsyncMock(),
+            )
+
     async def test_modal_builds_inputs_and_blocks_invalid_regex_submission(self) -> None:
         from lifeguard.features.forms.schema import FormField
         from lifeguard.features.forms.submission_modal import FormSubmissionModal
