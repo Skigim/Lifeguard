@@ -67,9 +67,11 @@ def get_config(firestore: FirestoreClient, guild_id: int) -> ContentReviewConfig
 
 def save_config(firestore: FirestoreClient, config: ContentReviewConfig) -> None:
     """Save or update a guild's content review configuration."""
+    payload = config.to_firestore()
+    payload["review_categories"] = firestore_sdk.DELETE_FIELD
     firestore.collection(CONFIGS_COLLECTION).document(
         _guild_doc_id(config.guild_id)
-    ).set(config.to_firestore(), merge=True)
+    ).set(payload, merge=True)
 
 
 def delete_config(firestore: FirestoreClient, guild_id: int) -> None:

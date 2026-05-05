@@ -2,6 +2,74 @@ import unittest
 
 
 class ContentReviewConfigMigrationTests(unittest.TestCase):
+    def test_save_config_clears_legacy_review_categories_on_merge(self) -> None:
+        from google.cloud import firestore as firestore_sdk
+
+        from lifeguard.features.forms.schema import FormCategory, ScoreOptions
+        from lifeguard.modules.content_review import repo
+        from lifeguard.modules.content_review.config import ContentReviewConfig
+
+        class FakeDocument:
+            def __init__(self, data: dict) -> None:
+                self.data = dict(data)
+
+            def set(self, payload: dict, merge: bool = False) -> None:
+                if not merge:
+                    self.data = dict(payload)
+                    return
+
+                merged = dict(self.data)
+                for key, value in payload.items():
+                    if value is firestore_sdk.DELETE_FIELD:
+                        merged.pop(key, None)
+                        continue
+                    merged[key] = value
+                self.data = merged
+
+        class FakeCollection:
+            def __init__(self, documents: dict[str, FakeDocument]) -> None:
+                self.documents = documents
+
+            def document(self, doc_id: str) -> FakeDocument:
+                return self.documents[doc_id]
+
+        class FakeFirestore:
+            def __init__(self, documents: dict[str, FakeDocument]) -> None:
+                self.documents = documents
+
+            def collection(self, _name: str) -> FakeCollection:
+                return FakeCollection(self.documents)
+
+        firestore = FakeFirestore(
+            {
+                "123": FakeDocument(
+                    {
+                        "guild_id": 123,
+                        "review_categories": [{"id": "legacy", "name": "Legacy"}],
+                        "unrelated_setting": "keep-me",
+                    }
+                )
+            }
+        )
+        config = ContentReviewConfig(
+            guild_id=123,
+            form_categories=[
+                FormCategory(
+                    id="overall",
+                    name="Overall",
+                    response_kind="score",
+                    options=ScoreOptions(min_value=1, max_value=5, allow_note=True),
+                )
+            ],
+        )
+
+        repo.save_config(firestore, config)
+
+        saved = firestore.documents["123"].data
+        self.assertIn("form_categories", saved)
+        self.assertNotIn("review_categories", saved)
+        self.assertEqual(saved["unrelated_setting"], "keep-me")
+
     def test_from_firestore_reads_true_legacy_review_categories_shape(self) -> None:
         from lifeguard.features.forms.schema import FormCategory, ScoreOptions
         from lifeguard.modules.content_review.config import ContentReviewConfig
