@@ -446,6 +446,28 @@ class FormWizardView(discord.ui.View):
         ]
         return fields
 
+    def _modal_initial_values_for_category(
+        self,
+        category: FormCategory,
+    ) -> dict[str, str]:
+        existing = self._response_for(category.id)
+        if existing is None:
+            return {}
+
+        if category.response_kind == "score":
+            return {
+                "reference": existing.reference,
+                "note": existing.note,
+            }
+
+        if category.response_kind == "text":
+            return {"value": cast(str, existing.value)}
+
+        return {
+            "reference": existing.reference,
+            "value": cast(str, existing.value),
+        }
+
     async def _on_select_submit(self, interaction: discord.Interaction) -> None:
         category = self.current_category
         if category is None:
@@ -517,6 +539,7 @@ class FormWizardView(discord.ui.View):
         modal = FormSubmissionModal(
             title=category.name,
             fields=self._modal_fields_for_category(category),
+            initial_values=self._modal_initial_values_for_category(category),
             on_submit_callback=_handle_modal_submit,
         )
         await interaction.response.send_modal(modal)

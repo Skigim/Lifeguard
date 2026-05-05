@@ -22,7 +22,11 @@ def _max_length_for(field_type: str) -> int:
 
 
 def _input_value(text_input: discord.ui.TextInput) -> str:
-    value = getattr(text_input, "_value", text_input.value)
+    value = getattr(text_input, "_value", None)
+    if value is None:
+        value = text_input.value
+    if value is None:
+        value = text_input.default
     if value is None:
         return ""
     return str(value)
@@ -37,6 +41,7 @@ class FormSubmissionModal(discord.ui.Modal):
             [discord.Interaction, dict[str, str]],
             Coroutine[Any, Any, None],
         ],
+        initial_values: dict[str, str] | None = None,
     ) -> None:
         super().__init__(title=title)
         self.fields = fields[:5]
@@ -50,6 +55,7 @@ class FormSubmissionModal(discord.ui.Modal):
                 placeholder=field.placeholder or None,
                 required=field.required,
                 max_length=_max_length_for(field.field_type),
+                default=(initial_values or {}).get(field.id) or None,
             )
             self._field_inputs[field.id] = text_input
             self.add_item(text_input)

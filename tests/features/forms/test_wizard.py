@@ -235,6 +235,61 @@ class FormWizardViewTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([option.label for option in select.options], ["Pass", "Needs Work"])
 
+    async def test_note_modal_reopens_with_existing_values_and_preserves_untouched_fields(
+        self,
+    ) -> None:
+        from lifeguard.features.forms.models import FormCategoryResponse, FormResponseSession
+        from lifeguard.features.forms.schema import FormCategory, NoteOptions
+        from lifeguard.features.forms.wizard import FormWizardView
+
+        view = FormWizardView(
+            categories=[
+                FormCategory(
+                    id="details",
+                    name="Details",
+                    response_kind="note",
+                    required=True,
+                    options=NoteOptions(placeholder="Add context", required_reference=True),
+                )
+            ],
+            session=FormResponseSession(
+                id="session-1",
+                guild_id=1,
+                feature_key="shared_forms",
+                owner_id="submission-1",
+                responder_id=2,
+                responses=[
+                    FormCategoryResponse(
+                        category_id="details",
+                        response_kind="note",
+                        value="Initial summary",
+                        reference="Clip 00:12",
+                    )
+                ],
+            ),
+            on_publish_callback=AsyncMock(),
+        )
+
+        interaction = MagicMock()
+        interaction.response.send_modal = AsyncMock()
+
+        await view._on_open_modal(interaction)
+
+        modal = interaction.response.send_modal.await_args.args[0]
+        self.assertEqual(modal._field_inputs["reference"].default, "Clip 00:12")
+        self.assertEqual(modal._field_inputs["value"].default, "Initial summary")
+
+        modal._field_inputs["value"]._value = "Updated summary"
+        modal_interaction = MagicMock()
+        modal_interaction.response.edit_message = AsyncMock()
+
+        await modal.on_submit(modal_interaction)
+
+        response = view._response_for("details")
+        self.assertIsNotNone(response)
+        self.assertEqual(response.value, "Updated summary")
+        self.assertEqual(response.reference, "Clip 00:12")
+
     async def test_score_category_with_allow_note_supports_note_and_reference_details(self) -> None:
         from lifeguard.features.forms.models import FormResponseSession
         from lifeguard.features.forms.schema import FormCategory, ScoreOptions
