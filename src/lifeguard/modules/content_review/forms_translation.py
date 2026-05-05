@@ -14,11 +14,26 @@ class ReviewPayload:
     notes: dict[str, ReviewNote] = field(default_factory=dict)
 
 
+def _ensure_content_review_score_kind(kind: str, *, context: str) -> None:
+    if kind != "score":
+        raise ValueError(
+            f"Content review {context} must use score responses; got {kind!r}"
+        )
+
+
 def session_to_review_payload(session: FormResponseSession) -> ReviewPayload:
+    if session.feature_key != "content_review":
+        raise ValueError(
+            "Content review translation only supports content_review sessions; "
+            f"got {session.feature_key!r}"
+        )
+
     payload = ReviewPayload()
     for response in session.responses:
-        if response.response_kind != "score":
-            continue
+        _ensure_content_review_score_kind(
+            response.response_kind,
+            context=f"response category {response.category_id!r}",
+        )
 
         payload.scores[response.category_id] = int(response.value)
         if response.note or response.reference:
@@ -35,9 +50,12 @@ def build_review_session_draft(
     responder_id: int,
     categories: Sequence[FormCategory],
 ) -> FormResponseSession:
-    # Materialize the sequence to keep later callers free to pass any ordered iterable
-    # without this helper mutating or consuming the source unexpectedly.
-    tuple(categories)
+    for category in categories:
+        _ensure_content_review_score_kind(
+            category.response_kind,
+            context=f"category {category.id!r}",
+        )
+
     return FormResponseSession(
         id=f"content_review:{submission_id}:{responder_id}",
         guild_id=guild_id,

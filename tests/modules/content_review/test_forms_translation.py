@@ -1,7 +1,7 @@
 import unittest
 
 from lifeguard.features.forms.models import FormCategoryResponse, FormResponseSession
-from lifeguard.features.forms.schema import FormCategory, ScoreOptions
+from lifeguard.features.forms.schema import FormCategory, NoteOptions, ScoreOptions
 
 
 class ContentReviewFormsTranslationTests(unittest.TestCase):
@@ -31,6 +31,44 @@ class ContentReviewFormsTranslationTests(unittest.TestCase):
         self.assertEqual(payload.scores, {"overall": 4})
         self.assertEqual(payload.notes["overall"].feedback, "Solid progress")
         self.assertEqual(payload.notes["overall"].reference, "01:23")
+
+    def test_session_to_review_payload_rejects_non_content_review_session(self) -> None:
+        from lifeguard.modules.content_review.forms_translation import session_to_review_payload
+
+        session = FormResponseSession(
+            id="session-1",
+            guild_id=123,
+            feature_key="availability",
+            owner_id="submission-1",
+            responder_id=456,
+            responses=[],
+            status="completed",
+        )
+
+        with self.assertRaisesRegex(ValueError, "content_review"):
+            session_to_review_payload(session)
+
+    def test_session_to_review_payload_rejects_non_score_response_kind(self) -> None:
+        from lifeguard.modules.content_review.forms_translation import session_to_review_payload
+
+        session = FormResponseSession(
+            id="session-1",
+            guild_id=123,
+            feature_key="content_review",
+            owner_id="submission-1",
+            responder_id=456,
+            responses=[
+                FormCategoryResponse(
+                    category_id="overall",
+                    response_kind="note",
+                    value="Solid progress",
+                )
+            ],
+            status="completed",
+        )
+
+        with self.assertRaisesRegex(ValueError, "score"):
+            session_to_review_payload(session)
 
     def test_build_review_session_draft_sets_content_review_defaults(self) -> None:
         from lifeguard.modules.content_review.forms_translation import build_review_session_draft
@@ -64,6 +102,26 @@ class ContentReviewFormsTranslationTests(unittest.TestCase):
         self.assertEqual(draft.responses, [])
         self.assertEqual(draft.status, "draft")
         self.assertEqual([category.id for category in categories], ["overall", "teamplay"])
+
+    def test_build_review_session_draft_rejects_unsupported_category_kind(self) -> None:
+        from lifeguard.modules.content_review.forms_translation import build_review_session_draft
+
+        categories = [
+            FormCategory(
+                id="overall",
+                name="Overall",
+                response_kind="note",
+                options=NoteOptions(),
+            )
+        ]
+
+        with self.assertRaisesRegex(ValueError, "score"):
+            build_review_session_draft(
+                submission_id="submission-1",
+                guild_id=123,
+                responder_id=456,
+                categories=categories,
+            )
 
 
 if __name__ == "__main__":
