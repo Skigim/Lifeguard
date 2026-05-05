@@ -12,6 +12,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from lifeguard.features.forms.models import FormResponseSession
+from lifeguard.features.forms.submission_modal import FormSubmissionModal
+from lifeguard.features.forms.wizard import FormWizardView
 from lifeguard.modules.content_review import repo
 from lifeguard.modules.content_review.config import (
     ContentReviewConfig,
@@ -24,11 +27,11 @@ from lifeguard.modules.content_review.embeds import (
     build_review_embed,
     build_submission_embed,
 )
-from lifeguard.modules.content_review.models import ReviewSession, Submission
-from lifeguard.modules.content_review.views.review_wizard import (
-    DraftReview,
-    ReviewWizardView,
+from lifeguard.modules.content_review.forms_translation import (
+    build_review_session_draft,
+    session_to_review_payload,
 )
+from lifeguard.modules.content_review.models import ReviewSession, Submission
 from lifeguard.modules.content_review.views.config_ui import (
     BackToContentReviewView,
     ContentReviewConfigView,
@@ -41,7 +44,6 @@ from lifeguard.modules.content_review.views.config_ui import (
     SettingsView,
     StickyConfigMenuView,
 )
-from lifeguard.modules.content_review.views.submission_modal import SubmissionModal
 from lifeguard.modules.content_review.sticky_service import (
     post_sticky_message,
     sync_sticky_message,
@@ -160,7 +162,7 @@ class ContentReviewCog(commands.Cog):
         self._config_home_handler: (
             Callable[[discord.Interaction], Awaitable[None]] | None
         ) = None
-        self._pending_reviews: dict[str, ReviewWizardView] = {}
+        self._pending_reviews: dict[str, FormWizardView] = {}
 
     @property
     def firestore(self) -> FirestoreClient:
@@ -1132,7 +1134,7 @@ class ContentReviewCog(commands.Cog):
         ) -> None:
             await self._handle_submission(modal_interaction, config, field_values)
 
-        modal = SubmissionModal(config, on_submit)
+        modal = FormSubmissionModal(config.modal_title, config.submission_fields, on_submit)
         await interaction.response.send_modal(modal)
 
     async def _handle_submission(
@@ -1491,7 +1493,7 @@ class ContentReviewCog(commands.Cog):
         ) -> None:
             await self._handle_submission(modal_interaction, config, field_values)
 
-        modal = SubmissionModal(config, on_submit)
+        modal = FormSubmissionModal(config.modal_title, config.submission_fields, on_submit)
         await interaction.response.send_modal(modal)
 
     async def _start_review(
@@ -1551,8 +1553,15 @@ class ContentReviewCog(commands.Cog):
             return
 
         # Create wizard
-        async def on_publish(draft: DraftReview) -> None:
-            await self._publish_review(interaction, config, submission, draft)
+        session = build_review_session_draft(
+            submission_id=submission.id,
+            guild_id=submission.guild_id,
+            responder_id=interaction.user.id,
+            categories=config.form_categories,
+        )
+
+        async def on_publish(published_session: FormResponseSession) -> None:
+            await self._publish_review(interaction, config, submission, published_session)
 
         try:
             submission = repo.claim_submission_for_review(
@@ -1571,10 +1580,9 @@ class ContentReviewCog(commands.Cog):
             )
             return
 
-        wizard = ReviewWizardView(
-            config=config,
-            submission=submission,
-            reviewer_id=interaction.user.id,
+        wizard = FormWizardView(
+            categories=config.form_categories,
+            session=session,
             on_publish_callback=on_publish,
             timeout=config.review_timeout_minutes * 60,
         )
@@ -1593,32 +1601,33 @@ class ContentReviewCog(commands.Cog):
         interaction: discord.Interaction,
         config: ContentReviewConfig,
         submission: Submission,
-        draft: DraftReview,
+        session: FormResponseSession,
     ) -> None:
         """Publish a completed review."""
         if not interaction.guild:
             return
 
         now = datetime.now(timezone.utc)
+        payload = session_to_review_payload(session)
 
         # Create review record
         review = ReviewSession(
             id="",
             submission_id=submission.id,
             guild_id=submission.guild_id,
-            reviewer_id=draft.reviewer_id,
-            submitter_id=draft.submitter_id,
-            scores=draft.scores,
-            notes=draft.notes,
-            created_at=draft.created_at,
-            completed_at=now,
+            reviewer_id=session.responder_id,
+            submitter_id=submission.submitter_id,
+            scores=payload.scores,
+            notes=payload.notes,
+            created_at=session.created_at,
+            completed_at=session.completed_at or now,
         )
 
         repo.create_review(self.firestore, review)
 
         # Update submission status
         submission.status = "completed"
-        submission.reviewer_id = draft.reviewer_id
+        submission.reviewer_id = session.responder_id
         repo.update_submission(self.firestore, submission)
 
         # Update user profiles
@@ -1629,7 +1638,7 @@ class ContentReviewCog(commands.Cog):
         repo.save_profile(self.firestore, submitter_profile)
 
         reviewer_profile = repo.get_or_create_profile(
-            self.firestore, submission.guild_id, draft.reviewer_id
+            self.firestore, submission.guild_id, session.responder_id
         )
         reviewer_profile.total_reviews_given += 1
         repo.save_profile(self.firestore, reviewer_profile)
@@ -1692,7 +1701,7 @@ class ContentReviewCog(commands.Cog):
         LOGGER.info(
             "Review published: submission=%s reviewer=%s",
             submission.id,
-            draft.reviewer_id,
+            session.responder_id,
         )
 
     # --- Error Handler ---
