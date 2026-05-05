@@ -126,6 +126,8 @@ FormCategoryOptions: TypeAlias = (
     ScoreOptions | SelectOptions | TextOptions | BooleanOptions | NoteOptions
 )
 
+FormFieldType: TypeAlias = Literal["short_text", "paragraph", "url"]
+
 
 def _ensure_response_kind(response_kind: str) -> ResponseKind:
     if response_kind in {
@@ -138,6 +140,12 @@ def _ensure_response_kind(response_kind: str) -> ResponseKind:
     }:
         return response_kind
     raise InvalidFormSchemaError(f"Unknown response kind: {response_kind}")
+
+
+def _ensure_field_type(field_type: str) -> FormFieldType:
+    if field_type in {"short_text", "paragraph", "url"}:
+        return field_type
+    raise InvalidFormSchemaError(f"Unknown field type: {field_type}")
 
 
 def _default_options_for_kind(response_kind: ResponseKind) -> FormCategoryOptions:
@@ -201,7 +209,7 @@ def _options_to_firestore(
 class FormField:
     id: str
     label: str
-    field_type: Literal["short_text", "paragraph", "url"] = "short_text"
+    field_type: FormFieldType = "short_text"
     required: bool = True
     placeholder: str = ""
     validation_regex: str = ""
@@ -214,7 +222,7 @@ class FormField:
         return cls(
             id=data["id"],
             label=data["label"],
-            field_type=data.get("field_type", "short_text"),
+            field_type=_ensure_field_type(data.get("field_type", "short_text")),
             required=data.get("required", True),
             placeholder=data.get("placeholder", ""),
             validation_regex=data.get("validation_regex", ""),
@@ -228,7 +236,7 @@ class FormCategory:
     description: str = ""
     response_kind: ResponseKind = "note"
     required: bool = True
-    options: FormCategoryOptions | None = None
+    options: FormCategoryOptions | None = field(default_factory=NoteOptions)
 
     def to_firestore(self) -> dict:
         return {
@@ -242,7 +250,7 @@ class FormCategory:
 
     @classmethod
     def from_firestore(cls, data: dict) -> "FormCategory":
-        response_kind = _ensure_response_kind(data["response_kind"])
+        response_kind = _ensure_response_kind(data.get("response_kind", "note"))
         return cls(
             id=data["id"],
             name=data["name"],

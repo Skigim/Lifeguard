@@ -2,6 +2,31 @@ import unittest
 
 
 class FormSchemaTests(unittest.TestCase):
+    def test_form_category_from_firestore_defaults_missing_response_kind_to_note(self) -> None:
+        from lifeguard.features.forms.schema import FormCategory, NoteOptions
+
+        restored = FormCategory.from_firestore(
+            {
+                "id": "note",
+                "name": "Note",
+            }
+        )
+
+        self.assertEqual(restored.response_kind, "note")
+        self.assertIsInstance(restored.options, NoteOptions)
+
+    def test_form_category_defaults_options_to_note_options(self) -> None:
+        from lifeguard.features.forms.schema import FormCategory, NoteOptions
+
+        category = FormCategory(id="note", name="Note")
+
+        self.assertEqual(category.response_kind, "note")
+        self.assertIsInstance(category.options, NoteOptions)
+        self.assertEqual(
+            category.to_firestore()["options"],
+            NoteOptions().to_firestore(),
+        )
+
     def test_form_category_round_trips_score_options(self) -> None:
         from lifeguard.features.forms.schema import FormCategory, ScoreOptions
 
@@ -133,6 +158,18 @@ class FormSchemaTests(unittest.TestCase):
         self.assertEqual(restored.field_type, "url")
         self.assertFalse(restored.required)
         self.assertEqual(restored.validation_regex, r"^https://")
+
+    def test_form_field_rejects_unknown_field_type(self) -> None:
+        from lifeguard.features.forms.schema import FormField, InvalidFormSchemaError
+
+        with self.assertRaises(InvalidFormSchemaError):
+            FormField.from_firestore(
+                {
+                    "id": "bad",
+                    "label": "Bad",
+                    "field_type": "markdown",
+                }
+            )
 
     def test_unknown_response_kind_is_rejected(self) -> None:
         from lifeguard.features.forms.schema import InvalidFormSchemaError, FormCategory
