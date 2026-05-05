@@ -236,7 +236,17 @@ class FormCategory:
     description: str = ""
     response_kind: ResponseKind = "note"
     required: bool = True
-    options: FormCategoryOptions | None = field(default_factory=NoteOptions)
+    options: FormCategoryOptions | None = None
+
+    def __post_init__(self) -> None:
+        resolved_kind = _ensure_response_kind(self.response_kind)
+        object.__setattr__(self, "response_kind", resolved_kind)
+        if self.options is None:
+            object.__setattr__(
+                self,
+                "options",
+                _default_options_for_kind(resolved_kind),
+            )
 
     def to_firestore(self) -> dict:
         return {

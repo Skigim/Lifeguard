@@ -27,6 +27,20 @@ class FormSchemaTests(unittest.TestCase):
             NoteOptions().to_firestore(),
         )
 
+    def test_form_category_direct_score_defaults_to_score_options(self) -> None:
+        from lifeguard.features.forms.schema import FormCategory, ScoreOptions
+
+        category = FormCategory(
+            id="overall",
+            name="Overall",
+            response_kind="score",
+        )
+
+        self.assertEqual(
+            category.to_firestore()["options"],
+            ScoreOptions().to_firestore(),
+        )
+
     def test_form_category_round_trips_score_options(self) -> None:
         from lifeguard.features.forms.schema import FormCategory, ScoreOptions
 
