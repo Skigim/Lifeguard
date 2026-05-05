@@ -198,6 +198,18 @@ If your module should be toggleable per-guild, you need:
 2. A feature check decorator to guard your commands
 3. A config sub-menu wired into the central `/config` command
 
+## Shared Forms Engine
+
+Use `lifeguard.features.forms` when a module needs configurable submission fields,
+category-based forms, or a guided response flow. The shared package owns the reusable
+schema (`FormField`, `FormCategory`), validation, wizard flow, and persisted response
+sessions so modules do not need to rebuild that infrastructure.
+
+Keep module-specific publish and follow-up behavior inside the module package. A module
+can translate shared form responses into embeds, tickets, review records, or any other
+feature-specific output, but that publish logic should stay local rather than moving
+into the shared forms engine.
+
 ### 1. Create a Config Model
 
 In your module's `config.py`:

@@ -427,7 +427,7 @@ class RemoveFieldByIdModal(discord.ui.Modal, title="Remove Submission Field"):
         )
 
 
-class RemoveCategoryByIdModal(discord.ui.Modal, title="Remove Review Category"):
+class RemoveCategoryByIdModal(discord.ui.Modal, title="Remove Form Category"):
     """Modal for removing a review category by ID."""
 
     category_id = discord.ui.TextInput(
@@ -524,7 +524,7 @@ class RemoveFieldView(discord.ui.View):
         await self.cog._show_form_editor_menu(interaction)
 
 
-class AddCategoryModal(discord.ui.Modal, title="Add Review Category"):
+class AddCategoryModal(discord.ui.Modal, title="Add Form Category"):
     """Modal for adding a review category."""
 
     category_id = discord.ui.TextInput(
