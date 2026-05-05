@@ -478,6 +478,33 @@ class FormWizardViewTests(unittest.IsolatedAsyncioTestCase):
             view=None,
         )
 
+    async def test_publish_failure_does_not_complete_session(self) -> None:
+        from lifeguard.features.forms.models import FormResponseSession
+        from lifeguard.features.forms.wizard import FormWizardView
+
+        session = FormResponseSession(
+            id="session-1",
+            guild_id=1,
+            feature_key="shared_forms",
+            owner_id="submission-1",
+            responder_id=2,
+        )
+        view = FormWizardView(
+            categories=[],
+            session=session,
+            on_publish_callback=AsyncMock(side_effect=RuntimeError("publish failed")),
+        )
+
+        interaction = MagicMock()
+        interaction.response.defer = AsyncMock()
+
+        with self.assertRaisesRegex(RuntimeError, "publish failed"):
+            await view._on_publish(interaction)
+
+        interaction.response.defer.assert_awaited_once_with()
+        self.assertEqual(session.status, "draft")
+        self.assertIsNone(session.completed_at)
+
 
 if __name__ == "__main__":
     unittest.main()

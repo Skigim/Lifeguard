@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any, cast
 
 import discord
@@ -622,8 +621,6 @@ class FormWizardView(discord.ui.View):
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
 
     async def _on_publish(self, interaction: discord.Interaction) -> None:
-        self.session.status = "completed"
-        self.session.completed_at = datetime.now(timezone.utc)
         await interaction.response.defer()
         self.stop()
         await self.on_publish_callback(self.session)
