@@ -12,6 +12,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from lifeguard.features.forms import repo as forms_repo
 from lifeguard.features.forms.models import FormResponseSession
 from lifeguard.features.forms.submission_modal import FormSubmissionModal
 from lifeguard.features.forms.schema import FormCategory, ScoreOptions
@@ -1699,6 +1700,7 @@ class ContentReviewCog(commands.Cog):
             return
 
         now = datetime.now(timezone.utc)
+        self._save_completed_form_session(session, completed_at=now)
         payload = session_to_review_payload(session)
 
         # Create review record
@@ -1794,6 +1796,16 @@ class ContentReviewCog(commands.Cog):
             submission.id,
             session.responder_id,
         )
+
+    def _save_completed_form_session(
+        self,
+        session: FormResponseSession,
+        *,
+        completed_at: datetime,
+    ) -> None:
+        session.status = "completed"
+        session.completed_at = completed_at
+        forms_repo.save_session(self.firestore, session)
 
     # --- Error Handler ---
 

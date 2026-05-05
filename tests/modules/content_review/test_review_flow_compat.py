@@ -350,6 +350,8 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
             create=True,
             return_value=translated_payload,
         ) as translate_payload, patch(
+            "lifeguard.features.forms.repo.save_session"
+        ), patch(
             "lifeguard.modules.content_review.cog.repo.create_review"
         ) as create_review, patch(
             "lifeguard.modules.content_review.cog.repo.update_submission"
@@ -389,6 +391,73 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
             embed=None,
             view=None,
         )
+
+    async def test_publish_review_saves_completed_generic_form_session_first(self) -> None:
+        from lifeguard.modules.content_review.cog import ContentReviewCog
+
+        submitter = MagicMock()
+        submitter.send = AsyncMock()
+        bot = SimpleNamespace(
+            lifeguard_firestore=object(),
+            fetch_user=AsyncMock(return_value=submitter),
+        )
+        cog = ContentReviewCog(bot)
+        config = self._build_config()
+        submission = Submission(
+            id="submission-1",
+            guild_id=123,
+            channel_id=999,
+            message_id=1001,
+            submitter_id=777,
+            fields={"game_link": "https://example.invalid/replay"},
+        )
+        session = FormResponseSession(
+            id="content_review:submission-1:456",
+            guild_id=123,
+            feature_key="content_review",
+            owner_id=submission.id,
+            responder_id=456,
+        )
+
+        channel = MagicMock(spec=discord.TextChannel)
+        original_message = MagicMock()
+        original_message.reply = AsyncMock()
+        channel.fetch_message = AsyncMock(return_value=original_message)
+        guild = SimpleNamespace(
+            id=123,
+            name="Lifeguard Guild",
+            get_channel=MagicMock(return_value=channel),
+        )
+        interaction = self._build_interaction(guild=guild, user_id=456)
+        call_sequence: list[str] = []
+
+        with patch(
+            "lifeguard.modules.content_review.cog.session_to_review_payload",
+            create=True,
+            return_value=ReviewPayload(scores={}, notes={}),
+        ), patch(
+            "lifeguard.features.forms.repo.save_session",
+            side_effect=lambda *_args, **_kwargs: call_sequence.append("save_session"),
+        ) as save_session, patch(
+            "lifeguard.modules.content_review.cog.repo.create_review",
+            side_effect=lambda *_args, **_kwargs: call_sequence.append("create_review"),
+        ), patch(
+            "lifeguard.modules.content_review.cog.repo.update_submission"
+        ), patch(
+            "lifeguard.modules.content_review.cog.repo.get_or_create_profile",
+            side_effect=[MagicMock(), SimpleNamespace(total_reviews_given=0)],
+        ), patch(
+            "lifeguard.modules.content_review.cog.repo.save_profile"
+        ), patch(
+            "lifeguard.modules.content_review.cog.build_review_embed",
+            return_value=discord.Embed(title="Review"),
+        ):
+            await cog._publish_review(interaction, config, submission, session)
+
+        self.assertEqual(session.status, "completed")
+        self.assertIsNotNone(session.completed_at)
+        save_session.assert_called_once_with(cog.firestore, session)
+        self.assertEqual(call_sequence[:2], ["save_session", "create_review"])
 
 
 if __name__ == "__main__":
