@@ -45,5 +45,10 @@ jobs:
             # Ensure the env uses the updated requirements, if any
             ./venv/bin/pip install -r requirements.txt
             # Restart the service
-            sudo systemctl restart lifeguard
+            if ! sudo -n systemctl restart lifeguard; then
+              echo "Deploy user cannot restart lifeguard without passwordless sudo." >&2
+              echo "Grant NOPASSWD access for systemctl restart lifeguard on the server." >&2
+              exit 1
+            fi
+            systemctl status lifeguard --no-pager --lines=20
             echo "Deployment successful!"
