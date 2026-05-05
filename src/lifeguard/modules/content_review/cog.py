@@ -166,7 +166,7 @@ def _content_review_detail_modal_visibility(
     response: object | None,
 ) -> bool:
     if category.response_kind == "score":
-        return cast(ScoreOptions, category.options).allow_note
+        return cast(ScoreOptions, category.options).allow_note and response is not None
     return response is not None or category.response_kind in {"text", "note"}
 
 
@@ -1678,6 +1678,10 @@ class ContentReviewCog(commands.Cog):
         await interaction.response.send_message(
             embed=embed, view=wizard, ephemeral=True
         )
+        try:
+            wizard.attach_message(await interaction.original_response())
+        except discord.HTTPException:
+            pass
 
         # Track the wizard
         key = f"{interaction.user.id}:{submission_id}"

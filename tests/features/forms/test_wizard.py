@@ -423,11 +423,39 @@ class FormWizardViewTests(unittest.IsolatedAsyncioTestCase):
         view._sync_components()
         self.assertEqual(view.build_embed().title, "Form Summary")
 
-        view._message = MagicMock()
-        view._message.edit = AsyncMock()
+    async def test_attach_message_enables_timeout_editing_live_message(self) -> None:
+        from lifeguard.features.forms.models import FormResponseSession
+        from lifeguard.features.forms.schema import FormCategory, ScoreOptions
+        from lifeguard.features.forms.wizard import FormWizardView
+
+        view = FormWizardView(
+            categories=[
+                FormCategory(
+                    id="overall",
+                    name="Overall",
+                    response_kind="score",
+                    required=True,
+                    options=ScoreOptions(min_value=1, max_value=5),
+                )
+            ],
+            session=FormResponseSession(
+                id="session-1",
+                guild_id=1,
+                feature_key="shared_forms",
+                owner_id="submission-1",
+                responder_id=2,
+            ),
+            on_publish_callback=AsyncMock(),
+        )
+
+        message = MagicMock()
+        message.edit = AsyncMock()
+
+        returned = view.attach_message(message)
         await view.on_timeout()
 
-        view._message.edit.assert_awaited_once_with(
+        self.assertIs(returned, view)
+        message.edit.assert_awaited_once_with(
             content="⏰ Form timed out.",
             embed=None,
             view=None,

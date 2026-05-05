@@ -187,6 +187,10 @@ class FormWizardView(discord.ui.View):
         self._message: discord.Message | None = None
         self._sync_components()
 
+    def attach_message(self, message: discord.Message) -> FormWizardView:
+        self._message = message
+        return self
+
     @property
     def current_category(self) -> FormCategory | None:
         if 0 <= self.current_step < len(self.categories):

@@ -44,6 +44,7 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
         user_id: int,
         user_name: str = "Reviewer",
     ) -> SimpleNamespace:
+        original_message = MagicMock()
         response = SimpleNamespace(
             send_message=AsyncMock(),
             send_modal=AsyncMock(),
@@ -54,6 +55,7 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
             guild=guild,
             user=SimpleNamespace(id=user_id, name=user_name),
             response=response,
+            original_response=AsyncMock(return_value=original_message),
             edit_original_response=AsyncMock(),
         )
 
@@ -161,6 +163,10 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
             view=wizard,
             ephemeral=True,
         )
+        interaction.original_response.assert_awaited_once_with()
+        wizard.attach_message.assert_called_once_with(
+            interaction.original_response.return_value
+        )
         self.assertIs(cog._pending_reviews[f"{interaction.user.id}:{submission.id}"], wizard)
 
     async def test_start_review_preserves_reviewer_facing_wizard_copy(self) -> None:
@@ -204,12 +210,12 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
         select = next(item for item in wizard.children if isinstance(item, discord.ui.Select))
         self.assertEqual(select.placeholder, "Select score (1-5)")
 
-        note_button = next(
+        note_buttons = [
             item
             for item in wizard.children
             if isinstance(item, discord.ui.Button) and item.custom_id == "wizard_open_modal"
-        )
-        self.assertEqual(note_button.label, "Add Note")
+        ]
+        self.assertEqual(note_buttons, [])
 
         next_button = next(
             item
@@ -222,6 +228,13 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
         select_interaction.data = {"values": ["4"]}
         select_interaction.response.edit_message = AsyncMock()
         await wizard._on_select_submit(select_interaction)
+
+        note_button = next(
+            item
+            for item in wizard.children
+            if isinstance(item, discord.ui.Button) and item.custom_id == "wizard_open_modal"
+        )
+        self.assertEqual(note_button.label, "Add Note")
 
         open_modal_interaction = MagicMock()
         open_modal_interaction.response.send_modal = AsyncMock()
