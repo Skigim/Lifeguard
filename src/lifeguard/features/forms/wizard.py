@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Coroutine
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, cast
 
@@ -18,6 +19,23 @@ from lifeguard.features.forms.schema import (
     TextOptions,
 )
 from lifeguard.features.forms.submission_modal import FormSubmissionModal
+
+
+@dataclass(frozen=True)
+class FormWizardCopy:
+    category_description_fallback: str = "Provide a response for this category."
+    current_response_field_name: str = "Current Response"
+    note_field_name: str = "Note"
+    reference_field_name: str = "Reference"
+    summary_title: str = "Form Summary"
+    summary_empty_description: str = "No responses recorded."
+    next_button_label: str = "Next"
+    final_step_next_label: str = "View Summary"
+    edit_button_label: str = "Edit"
+    publish_button_label: str = "Publish"
+    cancel_button_label: str = "Cancel"
+    cancel_message: str = "❌ Form cancelled."
+    timeout_message: str = "⏰ Form timed out."
 
 
 def _is_empty_value(value: int | str | bool | list[str] | None) -> bool:
@@ -137,12 +155,34 @@ class FormWizardView(discord.ui.View):
             [FormResponseSession],
             Coroutine[Any, Any, None],
         ],
+        copy: FormWizardCopy | None = None,
+        select_placeholder_builder: Callable[[FormCategory], str] | None = None,
+        detail_button_label_builder: Callable[
+            [FormCategory, FormCategoryResponse | None],
+            str,
+        ]
+        | None = None,
+        detail_modal_visibility_builder: Callable[
+            [FormCategory, FormCategoryResponse | None],
+            bool,
+        ]
+        | None = None,
+        summary_embed_builder: Callable[
+            [list[FormCategory], FormResponseSession],
+            discord.Embed,
+        ]
+        | None = None,
         timeout: float = 900.0,
     ) -> None:
         super().__init__(timeout=timeout)
         self.categories = categories
         self.session = session
         self.on_publish_callback = on_publish_callback
+        self.copy = copy or FormWizardCopy()
+        self.select_placeholder_builder = select_placeholder_builder
+        self.detail_button_label_builder = detail_button_label_builder
+        self.detail_modal_visibility_builder = detail_modal_visibility_builder
+        self.summary_embed_builder = summary_embed_builder
         self.current_step = 0
         self._message: discord.Message | None = None
         self._sync_components()
@@ -201,26 +241,26 @@ class FormWizardView(discord.ui.View):
 
         embed = discord.Embed(
             title=f"Step {self.current_step + 1}/{len(self.categories)}: {category.name}",
-            description=category.description or "Provide a response for this category.",
+            description=category.description or self.copy.category_description_fallback,
             color=discord.Color.blue(),
         )
 
         response = self._response_for(category.id)
         if response is not None and not _is_empty_value(response.value):
             embed.add_field(
-                name="Current Response",
+                name=self.copy.current_response_field_name,
                 value=_response_label(category, response),
                 inline=False,
             )
             if response.note.strip():
                 embed.add_field(
-                    name="Note",
+                    name=self.copy.note_field_name,
                     value=response.note.strip(),
                     inline=False,
                 )
             if response.reference.strip():
                 embed.add_field(
-                    name="Reference",
+                    name=self.copy.reference_field_name,
                     value=response.reference.strip(),
                     inline=False,
                 )
@@ -232,24 +272,34 @@ class FormWizardView(discord.ui.View):
         return embed
 
     def _build_summary_embed(self) -> discord.Embed:
+        if self.summary_embed_builder is not None:
+            return self.summary_embed_builder(self.categories, self.session)
+
         lines = build_summary_lines(self.categories, self.session.responses)
-        description = "\n".join(lines) if lines else "No responses recorded."
+        description = "\n".join(lines) if lines else self.copy.summary_empty_description
         return discord.Embed(
-            title="Form Summary",
+            title=self.copy.summary_title,
             description=description,
             color=discord.Color.green(),
         )
 
     def _supports_detail_modal(self, category: FormCategory) -> bool:
+        response = self._response_for(category.id)
+        if self.detail_modal_visibility_builder is not None:
+            return self.detail_modal_visibility_builder(category, response)
+
         if category.response_kind in {"text", "note"}:
             return True
         if category.response_kind == "score":
             options = cast(ScoreOptions, category.options)
-            return options.allow_note and self._response_for(category.id) is not None
+            return options.allow_note and response is not None
         return False
 
     def _modal_button_label(self, category: FormCategory) -> str:
         response = self._response_for(category.id)
+        if self.detail_button_label_builder is not None:
+            return self.detail_button_label_builder(category, response)
+
         if category.response_kind == "score":
             if response is not None and (
                 response.note.strip() or response.reference.strip()
@@ -284,7 +334,11 @@ class FormWizardView(discord.ui.View):
             self.add_item(back_button)
 
         next_button = discord.ui.Button(
-            label="Review Summary" if self.current_step == len(self.categories) - 1 else "Next",
+            label=(
+                self.copy.final_step_next_label
+                if self.current_step == len(self.categories) - 1
+                else self.copy.next_button_label
+            ),
             style=discord.ButtonStyle.primary,
             custom_id="wizard_next",
             disabled=self._active_step_error() is not None,
@@ -293,7 +347,7 @@ class FormWizardView(discord.ui.View):
         self.add_item(next_button)
 
         cancel_button = discord.ui.Button(
-            label="Cancel",
+            label=self.copy.cancel_button_label,
             style=discord.ButtonStyle.danger,
             custom_id="wizard_cancel",
         )
@@ -302,7 +356,7 @@ class FormWizardView(discord.ui.View):
 
     def _add_summary_components(self) -> None:
         edit_button = discord.ui.Button(
-            label="Edit",
+            label=self.copy.edit_button_label,
             style=discord.ButtonStyle.secondary,
             custom_id="wizard_edit",
         )
@@ -310,7 +364,7 @@ class FormWizardView(discord.ui.View):
         self.add_item(edit_button)
 
         publish_button = discord.ui.Button(
-            label="Publish",
+            label=self.copy.publish_button_label,
             style=discord.ButtonStyle.success,
             custom_id="wizard_publish",
             disabled=bool(self.categories) and any(
@@ -327,7 +381,7 @@ class FormWizardView(discord.ui.View):
         self.add_item(publish_button)
 
         cancel_button = discord.ui.Button(
-            label="Cancel",
+            label=self.copy.cancel_button_label,
             style=discord.ButtonStyle.danger,
             custom_id="wizard_cancel",
         )
@@ -337,7 +391,11 @@ class FormWizardView(discord.ui.View):
     def _build_select(self, category: FormCategory) -> discord.ui.Select:
         response = self._response_for(category.id)
         options: list[discord.SelectOption]
-        placeholder = f"Select {category.name}"
+        placeholder = (
+            self.select_placeholder_builder(category)
+            if self.select_placeholder_builder is not None
+            else f"Select {category.name}"
+        )
         min_values = 1
         max_values = 1
 
@@ -569,10 +627,19 @@ class FormWizardView(discord.ui.View):
     async def _on_cancel(self, interaction: discord.Interaction) -> None:
         self.stop()
         await interaction.response.edit_message(
-            content="❌ Form cancelled.",
+            content=self.copy.cancel_message,
             embed=None,
             view=None,
         )
 
     async def on_timeout(self) -> None:
         self.stop()
+        if self._message is not None:
+            try:
+                await self._message.edit(
+                    content=self.copy.timeout_message,
+                    embed=None,
+                    view=None,
+                )
+            except discord.NotFound:
+                pass

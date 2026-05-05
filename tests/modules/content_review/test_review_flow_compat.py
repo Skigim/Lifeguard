@@ -163,6 +163,120 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIs(cog._pending_reviews[f"{interaction.user.id}:{submission.id}"], wizard)
 
+    async def test_start_review_preserves_reviewer_facing_wizard_copy(self) -> None:
+        from lifeguard.modules.content_review.cog import ContentReviewCog
+
+        bot = SimpleNamespace(lifeguard_firestore=object())
+        cog = ContentReviewCog(bot)
+        config = self._build_config()
+        submission = Submission(
+            id="submission-1",
+            guild_id=123,
+            channel_id=999,
+            message_id=1001,
+            submitter_id=777,
+            fields={"game_link": "https://example.invalid/replay"},
+        )
+        interaction = self._build_interaction(
+            guild=SimpleNamespace(id=123),
+            user_id=456,
+        )
+
+        with patch(
+            "lifeguard.modules.content_review.cog.repo.get_config",
+            return_value=config,
+        ), patch(
+            "lifeguard.modules.content_review.cog.repo.get_submission",
+            return_value=submission,
+        ), patch(
+            "lifeguard.modules.content_review.cog.repo.claim_submission_for_review",
+            return_value=submission,
+        ):
+            await cog._start_review(interaction, submission.id)
+
+        wizard = interaction.response.send_message.await_args.kwargs["view"]
+        self.assertEqual(interaction.response.send_message.await_args.kwargs["embed"].title, "Step 1/1: Overall")
+        self.assertEqual(
+            interaction.response.send_message.await_args.kwargs["embed"].description,
+            "Rate this category.",
+        )
+
+        select = next(item for item in wizard.children if isinstance(item, discord.ui.Select))
+        self.assertEqual(select.placeholder, "Select score (1-5)")
+
+        note_button = next(
+            item
+            for item in wizard.children
+            if isinstance(item, discord.ui.Button) and item.custom_id == "wizard_open_modal"
+        )
+        self.assertEqual(note_button.label, "Add Note")
+
+        next_button = next(
+            item
+            for item in wizard.children
+            if isinstance(item, discord.ui.Button) and item.custom_id == "wizard_next"
+        )
+        self.assertEqual(next_button.label, "Review Summary")
+
+        select_interaction = MagicMock()
+        select_interaction.data = {"values": ["4"]}
+        select_interaction.response.edit_message = AsyncMock()
+        await wizard._on_select_submit(select_interaction)
+
+        open_modal_interaction = MagicMock()
+        open_modal_interaction.response.send_modal = AsyncMock()
+        await wizard._on_open_modal(open_modal_interaction)
+
+        modal = open_modal_interaction.response.send_modal.await_args.args[0]
+        modal._field_inputs["reference"]._value = "Clip 00:12"
+        modal._field_inputs["note"]._value = "Solid progress"
+        modal_interaction = MagicMock()
+        modal_interaction.response.edit_message = AsyncMock()
+        await modal.on_submit(modal_interaction)
+
+        note_button = next(
+            item
+            for item in wizard.children
+            if isinstance(item, discord.ui.Button) and item.custom_id == "wizard_open_modal"
+        )
+        self.assertEqual(note_button.label, "✅ Note")
+
+        next_interaction = MagicMock()
+        next_interaction.response.edit_message = AsyncMock()
+        await wizard._on_next(next_interaction)
+
+        summary_embed = wizard.build_embed()
+        self.assertEqual(summary_embed.title, "📋 Review Summary")
+        self.assertEqual(
+            summary_embed.description,
+            "Review your scores before publishing.",
+        )
+
+        publish_button = next(
+            item
+            for item in wizard.children
+            if isinstance(item, discord.ui.Button) and item.custom_id == "wizard_publish"
+        )
+        self.assertEqual(publish_button.label, "Publish Review")
+
+        cancel_interaction = MagicMock()
+        cancel_interaction.response.edit_message = AsyncMock()
+        await wizard._on_cancel(cancel_interaction)
+        cancel_interaction.response.edit_message.assert_awaited_once_with(
+            content="❌ Review cancelled.",
+            embed=None,
+            view=None,
+        )
+
+        wizard._message = MagicMock()
+        wizard._message.edit = AsyncMock()
+        await wizard.on_timeout()
+        wizard._message.edit.assert_awaited_once_with(
+            content="⏰ Review timed out.",
+            embed=None,
+            view=None,
+        )
+
     async def test_publish_review_translates_shared_session_to_legacy_review_record(self) -> None:
         from lifeguard.modules.content_review.cog import ContentReviewCog
 

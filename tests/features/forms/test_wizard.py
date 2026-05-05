@@ -387,6 +387,52 @@ class FormWizardViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(select.placeholder, "Select Overall")
         self.assertTrue(next_button.disabled)
 
+    async def test_wizard_uses_generic_default_copy_for_summary_and_timeout(self) -> None:
+        from lifeguard.features.forms.models import FormResponseSession
+        from lifeguard.features.forms.schema import FormCategory, ScoreOptions
+        from lifeguard.features.forms.wizard import FormWizardView
+
+        view = FormWizardView(
+            categories=[
+                FormCategory(
+                    id="overall",
+                    name="Overall",
+                    response_kind="score",
+                    required=True,
+                    options=ScoreOptions(min_value=1, max_value=5),
+                )
+            ],
+            session=FormResponseSession(
+                id="session-1",
+                guild_id=1,
+                feature_key="shared_forms",
+                owner_id="submission-1",
+                responder_id=2,
+            ),
+            on_publish_callback=AsyncMock(),
+        )
+
+        next_button = next(
+            item
+            for item in view.children
+            if isinstance(item, discord.ui.Button) and item.custom_id == "wizard_next"
+        )
+        self.assertEqual(next_button.label, "View Summary")
+
+        view.current_step = len(view.categories)
+        view._sync_components()
+        self.assertEqual(view.build_embed().title, "Form Summary")
+
+        view._message = MagicMock()
+        view._message.edit = AsyncMock()
+        await view.on_timeout()
+
+        view._message.edit.assert_awaited_once_with(
+            content="⏰ Form timed out.",
+            embed=None,
+            view=None,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

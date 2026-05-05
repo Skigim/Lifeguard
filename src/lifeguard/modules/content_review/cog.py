@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 import logging
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import discord
 from discord import app_commands
@@ -14,7 +14,8 @@ from discord.ext import commands
 
 from lifeguard.features.forms.models import FormResponseSession
 from lifeguard.features.forms.submission_modal import FormSubmissionModal
-from lifeguard.features.forms.wizard import FormWizardView
+from lifeguard.features.forms.schema import FormCategory, ScoreOptions
+from lifeguard.features.forms.wizard import FormWizardCopy, FormWizardView
 from lifeguard.modules.content_review import repo
 from lifeguard.modules.content_review.config import (
     ContentReviewConfig,
@@ -65,6 +66,19 @@ _FEATURE_CONTENT_REVIEW = "Content Review"
 
 _ALLOWED_FIELD_TYPES = frozenset({"short_text", "paragraph", "url"})
 
+_CONTENT_REVIEW_WIZARD_COPY = FormWizardCopy(
+    category_description_fallback="Rate this category.",
+    current_response_field_name="Current Score",
+    summary_title="📋 Review Summary",
+    next_button_label="Next",
+    final_step_next_label="Review Summary",
+    edit_button_label="Edit",
+    publish_button_label="Publish Review",
+    cancel_button_label="Cancel",
+    cancel_message="❌ Review cancelled.",
+    timeout_message="⏰ Review timed out.",
+)
+
 
 # --- Feature Check Decorators ---
 
@@ -86,6 +100,74 @@ def require_content_review():
         return True
 
     return app_commands.check(predicate)
+
+
+def _build_content_review_summary_embed(
+    categories: list[FormCategory],
+    session: FormResponseSession,
+) -> discord.Embed:
+    embed = discord.Embed(
+        title=_CONTENT_REVIEW_WIZARD_COPY.summary_title,
+        description="Review your scores before publishing.",
+        color=discord.Color.green(),
+    )
+    scores: list[int] = []
+    responses_by_category = {
+        response.category_id: response
+        for response in session.responses
+    }
+
+    for category in categories:
+        response = responses_by_category.get(category.id)
+        score = response.value if response is not None else "N/A"
+        value = f"**Score: {score}**"
+        if response is not None and response.note.strip():
+            note_preview = response.note.strip()
+            if len(note_preview) > 80:
+                note_preview = f"{note_preview[:80]}..."
+            value = f"{value}\n📝 {note_preview}"
+        embed.add_field(name=category.name, value=value, inline=False)
+
+        if response is not None and isinstance(response.value, int) and not isinstance(
+            response.value,
+            bool,
+        ):
+            scores.append(response.value)
+
+    if scores:
+        average_score = sum(scores) / len(scores)
+        embed.add_field(name="Average Score", value=f"**{average_score:.1f}**", inline=True)
+
+    return embed
+
+
+def _content_review_select_placeholder(category: FormCategory) -> str:
+    if category.response_kind == "score":
+        options = cast(ScoreOptions, category.options)
+        return f"Select score ({options.min_value}-{options.max_value})"
+    return f"Select {category.name}"
+
+
+def _content_review_detail_button_label(
+    category: FormCategory,
+    response: object | None,
+) -> str:
+    if category.response_kind == "score":
+        if response is not None and (
+            response.note.strip() or response.reference.strip()
+        ):
+            return "✅ Note"
+        return "Add Note"
+    return "Edit Response" if response is not None else "Add Response"
+
+
+def _content_review_detail_modal_visibility(
+    category: FormCategory,
+    response: object | None,
+) -> bool:
+    if category.response_kind == "score":
+        return cast(ScoreOptions, category.options).allow_note
+    return response is not None or category.response_kind in {"text", "note"}
 
 
 class StartReviewButton(discord.ui.View):
@@ -1584,6 +1666,11 @@ class ContentReviewCog(commands.Cog):
             categories=config.form_categories,
             session=session,
             on_publish_callback=on_publish,
+            copy=_CONTENT_REVIEW_WIZARD_COPY,
+            select_placeholder_builder=_content_review_select_placeholder,
+            detail_button_label_builder=_content_review_detail_button_label,
+            detail_modal_visibility_builder=_content_review_detail_modal_visibility,
+            summary_embed_builder=_build_content_review_summary_embed,
             timeout=config.review_timeout_minutes * 60,
         )
 
