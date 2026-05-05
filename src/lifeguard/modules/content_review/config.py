@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, MutableSequence
 from dataclasses import dataclass, field
 
 from lifeguard.features.forms.schema import FormCategory, FormField, ScoreOptions
@@ -11,49 +12,90 @@ def _score_options_for_category(category: FormCategory) -> ScoreOptions:
     raise TypeError("Content review categories must use score options during migration.")
 
 
-if not isinstance(getattr(FormCategory, "min_score", None), property):
-    FormCategory.min_score = property(
-        lambda self: _score_options_for_category(self).min_value
-    )
-    FormCategory.max_score = property(
-        lambda self: _score_options_for_category(self).max_value
-    )
-    FormCategory.allow_notes = property(
-        lambda self: _score_options_for_category(self).allow_note
-    )
-
-
 SubmissionField = FormField
 
 
-def ReviewCategory(
-    *,
-    id: str,
-    name: str,
-    description: str = "",
-    min_score: int = 1,
-    max_score: int = 5,
-    allow_notes: bool = True,
-    response_kind: str = "score",
-    required: bool = True,
-    options: object | None = None,
-) -> FormCategory:
-    resolved_options = options
-    if resolved_options is None and response_kind == "score":
-        resolved_options = ScoreOptions(
-            min_value=min_score,
-            max_value=max_score,
-            allow_note=allow_notes,
+@dataclass(frozen=True)
+class ReviewCategory:
+    id: str
+    name: str
+    description: str = ""
+    min_score: int = 1
+    max_score: int = 5
+    allow_notes: bool = True
+    required: bool = True
+
+    @property
+    def response_kind(self) -> str:
+        return "score"
+
+    def to_form_category(self) -> FormCategory:
+        return FormCategory(
+            id=self.id,
+            name=self.name,
+            description=self.description,
+            response_kind="score",
+            required=self.required,
+            options=ScoreOptions(
+                min_value=self.min_score,
+                max_value=self.max_score,
+                allow_note=self.allow_notes,
+            ),
         )
 
-    return FormCategory(
-        id=id,
-        name=name,
-        description=description,
-        response_kind=response_kind,
-        required=required,
-        options=resolved_options,
-    )
+    @classmethod
+    def from_form_category(cls, category: FormCategory) -> ReviewCategory:
+        options = _score_options_for_category(category)
+        return cls(
+            id=category.id,
+            name=category.name,
+            description=category.description,
+            min_score=options.min_value,
+            max_score=options.max_value,
+            allow_notes=options.allow_note,
+            required=category.required,
+        )
+
+
+def _as_form_category(category: ReviewCategory | FormCategory) -> FormCategory:
+    if isinstance(category, ReviewCategory):
+        return category.to_form_category()
+    _score_options_for_category(category)
+    return category
+
+
+class _ReviewCategoryList(MutableSequence[ReviewCategory]):
+    def __init__(self, categories: list[FormCategory]) -> None:
+        self._categories = categories
+
+    def __len__(self) -> int:
+        return len(self._categories)
+
+    def __getitem__(self, index: int | slice) -> ReviewCategory | list[ReviewCategory]:
+        if isinstance(index, slice):
+            return [ReviewCategory.from_form_category(category) for category in self._categories[index]]
+        return ReviewCategory.from_form_category(self._categories[index])
+
+    def __setitem__(
+        self,
+        index: int | slice,
+        value: ReviewCategory | FormCategory | Iterable[ReviewCategory | FormCategory],
+    ) -> None:
+        if isinstance(index, slice):
+            if not isinstance(value, Iterable):
+                raise TypeError("Slice assignment requires an iterable of categories.")
+            self._categories[index] = [_as_form_category(category) for category in value]
+            return
+
+        if isinstance(value, Iterable) and not isinstance(value, (ReviewCategory, FormCategory)):
+            raise TypeError("Single category assignment requires a ReviewCategory or FormCategory.")
+        self._categories[index] = _as_form_category(value)
+
+    def __delitem__(self, index: int | slice) -> None:
+        del self._categories[index]
+
+    def insert(self, index: int, value: ReviewCategory | FormCategory) -> None:
+        self._categories.insert(index, _as_form_category(value))
 
 
 def _form_category_from_firestore(data: dict) -> FormCategory:
@@ -68,7 +110,7 @@ def _form_category_from_firestore(data: dict) -> FormCategory:
         max_score=data.get("max_score", 5),
         allow_notes=data.get("allow_notes", True),
         required=data.get("required", True),
-    )
+    ).to_form_category()
 
 
 @dataclass
@@ -106,12 +148,15 @@ class ContentReviewConfig:
     ticket_description: str = "A new submission is ready for review."
 
     @property
-    def review_categories(self) -> list[FormCategory]:
-        return self.form_categories
+    def review_categories(self) -> MutableSequence[ReviewCategory]:
+        return _ReviewCategoryList(self.form_categories)
 
     @review_categories.setter
-    def review_categories(self, categories: list[FormCategory]) -> None:
-        self.form_categories = list(categories)
+    def review_categories(
+        self,
+        categories: Iterable[ReviewCategory | FormCategory],
+    ) -> None:
+        self.form_categories = [_as_form_category(category) for category in categories]
 
     def to_firestore(self) -> dict:
         return {
