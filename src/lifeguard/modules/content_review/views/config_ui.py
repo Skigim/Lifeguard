@@ -357,12 +357,12 @@ class RemoveRoleView(discord.ui.View):
 class EnableContentReviewModal(discord.ui.Modal, title="Enable Content Review"):
     """Modal for enabling content review without dropdowns."""
 
-    ticket_category = discord.ui.TextInput(
+    ticket_category: discord.ui.TextInput = discord.ui.TextInput(
         label="Ticket Category",
         placeholder="Category ID or mention (e.g. 123... or <#123...>)",
         max_length=40,
     )
-    reviewer_role = discord.ui.TextInput(
+    reviewer_role: discord.ui.TextInput = discord.ui.TextInput(
         label="Reviewer Role (optional)",
         placeholder="Role ID or mention (e.g. 123... or <@&123...>)",
         required=False,
@@ -411,7 +411,7 @@ class EnableContentReviewModal(discord.ui.Modal, title="Enable Content Review"):
 class RemoveFieldByIdModal(discord.ui.Modal, title="Remove Submission Field"):
     """Modal for removing a submission field by ID."""
 
-    field_id = discord.ui.TextInput(
+    field_id: discord.ui.TextInput = discord.ui.TextInput(
         label="Field ID",
         placeholder="e.g. game_link",
         max_length=50,
@@ -430,7 +430,7 @@ class RemoveFieldByIdModal(discord.ui.Modal, title="Remove Submission Field"):
 class RemoveCategoryByIdModal(discord.ui.Modal, title="Remove Form Category"):
     """Modal for removing a review category by ID."""
 
-    category_id = discord.ui.TextInput(
+    category_id: discord.ui.TextInput = discord.ui.TextInput(
         label="Category ID",
         placeholder="e.g. gameplay",
         max_length=50,
@@ -449,29 +449,29 @@ class RemoveCategoryByIdModal(discord.ui.Modal, title="Remove Form Category"):
 class AddFieldModal(discord.ui.Modal, title="Add Submission Field"):
     """Modal for adding a submission field."""
 
-    field_id = discord.ui.TextInput(
+    field_id: discord.ui.TextInput = discord.ui.TextInput(
         label="Field ID",
         placeholder="e.g., game_link",
         max_length=50,
     )
-    label = discord.ui.TextInput(
+    label: discord.ui.TextInput = discord.ui.TextInput(
         label="Display Label",
         placeholder="e.g., Game Link",
         max_length=45,
     )
-    field_type = discord.ui.TextInput(
+    field_type: discord.ui.TextInput = discord.ui.TextInput(
         label="Field Type",
         placeholder="short_text, paragraph, or url",
         default="short_text",
         max_length=20,
     )
-    placeholder = discord.ui.TextInput(
+    placeholder: discord.ui.TextInput = discord.ui.TextInput(
         label="Placeholder Text",
         placeholder="Hint text shown in the input",
         required=False,
         max_length=100,
     )
-    required = discord.ui.TextInput(
+    required: discord.ui.TextInput = discord.ui.TextInput(
         label="Required? (yes/no)",
         placeholder="yes",
         default="yes",
@@ -527,23 +527,23 @@ class RemoveFieldView(discord.ui.View):
 class AddCategoryModal(discord.ui.Modal, title="Add Form Category"):
     """Modal for adding a review category."""
 
-    category_id = discord.ui.TextInput(
+    category_id: discord.ui.TextInput = discord.ui.TextInput(
         label="Category ID",
         placeholder="e.g., gameplay",
         max_length=50,
     )
-    name = discord.ui.TextInput(
+    name: discord.ui.TextInput = discord.ui.TextInput(
         label="Display Name",
         placeholder="e.g., Gameplay",
         max_length=50,
     )
-    description = discord.ui.TextInput(
+    description: discord.ui.TextInput = discord.ui.TextInput(
         label="Description (help text for reviewers)",
         placeholder="How well did the player perform?",
         required=False,
         max_length=200,
     )
-    score_range = discord.ui.TextInput(
+    score_range: discord.ui.TextInput = discord.ui.TextInput(
         label="Score Range (min-max)",
         placeholder="1-5",
         default="1-5",
@@ -603,26 +603,26 @@ class RemoveCategoryView(discord.ui.View):
 class SetStickyModal(discord.ui.Modal, title="Customize Sticky Message"):
     """Modal for customizing the sticky submit message."""
 
-    sticky_title = discord.ui.TextInput(
+    sticky_title: discord.ui.TextInput = discord.ui.TextInput(
         label="Title",
         placeholder="📥 Content Review",
         required=False,
         max_length=100,
     )
-    sticky_description = discord.ui.TextInput(
+    sticky_description: discord.ui.TextInput = discord.ui.TextInput(
         label="Description",
         placeholder="Submit your content for feedback!",
         style=discord.TextStyle.paragraph,
         required=False,
         max_length=500,
     )
-    button_label = discord.ui.TextInput(
+    button_label: discord.ui.TextInput = discord.ui.TextInput(
         label="Button Label",
         placeholder="Submit Content",
         required=False,
         max_length=50,
     )
-    button_emoji = discord.ui.TextInput(
+    button_emoji: discord.ui.TextInput = discord.ui.TextInput(
         label="Button Emoji",
         placeholder="📝",
         required=False,
@@ -703,7 +703,7 @@ class SettingsView(discord.ui.View):
 class TimeoutModal(discord.ui.Modal, title="Set Review Timeout"):
     """Modal for setting review timeout."""
 
-    timeout_minutes = discord.ui.TextInput(
+    timeout_minutes: discord.ui.TextInput = discord.ui.TextInput(
         label="Timeout (minutes)",
         placeholder="15",
         default="15",

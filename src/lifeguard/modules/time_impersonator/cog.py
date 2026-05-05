@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from zoneinfo import ZoneInfo, available_timezones
 
 import discord
@@ -88,8 +88,8 @@ def _parse_and_replace_times(message: str, user_tz: ZoneInfo) -> str:
         The message with time references replaced by Discord timestamp syntax.
     """
     # Import here to avoid import errors if dateparser not installed
-    import dateparser  # type: ignore[import-not-found]
-    from dateparser.search import search_dates  # type: ignore[import-not-found]
+    import dateparser  # type: ignore[import-untyped]
+    from dateparser.search import search_dates  # type: ignore[import-untyped]
 
     # Get current time in user's timezone as reference
     now_in_user_tz = datetime.now(user_tz)
@@ -218,7 +218,8 @@ async def _check_time_impersonator_enabled(
     """Check that time impersonator is enabled for this guild."""
     if not interaction.guild:
         return False
-    cog = interaction.client.get_cog("TimeImpersonatorCog")
+    bot = cast(commands.Bot, interaction.client)
+    cog = cast(TimeImpersonatorCog | None, bot.get_cog("TimeImpersonatorCog"))
     if not cog or not cog.firestore:
         return False
     config = repo.get_config(cog.firestore, interaction.guild.id)
@@ -437,7 +438,14 @@ class TimeImpersonatorCog(commands.Cog):
             )
 
             # Get or create webhook
-            webhook = await _get_or_create_webhook(interaction.channel, self.bot.user)
+            bot_user = self.bot.user
+            if bot_user is None:
+                await interaction.followup.send(
+                    "Bot user is unavailable. Please try again.", ephemeral=True
+                )
+                return
+
+            webhook = await _get_or_create_webhook(interaction.channel, bot_user)
 
             # Send message as user
             await webhook.send(

@@ -10,7 +10,7 @@ import discord
 class NoteModal(discord.ui.Modal):
     """Modal for adding a note to a review category."""
 
-    reference = discord.ui.TextInput(
+    reference: discord.ui.TextInput = discord.ui.TextInput(
         label="Reference",
         style=discord.TextStyle.short,
         placeholder="e.g., timestamp, section, or specific moment",
@@ -18,7 +18,7 @@ class NoteModal(discord.ui.Modal):
         max_length=100,
     )
 
-    feedback = discord.ui.TextInput(
+    feedback: discord.ui.TextInput = discord.ui.TextInput(
         label="Feedback",
         style=discord.TextStyle.paragraph,
         placeholder="Your detailed feedback for this category...",

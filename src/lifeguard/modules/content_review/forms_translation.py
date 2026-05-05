@@ -35,7 +35,14 @@ def session_to_review_payload(session: FormResponseSession) -> ReviewPayload:
             context=f"response category {response.category_id!r}",
         )
 
-        payload.scores[response.category_id] = int(response.value)
+        score_value = response.value
+        if isinstance(score_value, bool) or not isinstance(score_value, int):
+            raise ValueError(
+                "Content review score responses must store integer values; "
+                f"got {score_value!r}"
+            )
+
+        payload.scores[response.category_id] = score_value
         if response.note or response.reference:
             payload.notes[response.category_id] = ReviewNote(
                 reference=response.reference,

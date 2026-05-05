@@ -57,7 +57,7 @@ class FormSubmissionModal(discord.ui.Modal):
         self._field_inputs: dict[str, discord.ui.TextInput] = {}
 
         for field in self.fields:
-            text_input = discord.ui.TextInput(
+            text_input: discord.ui.TextInput = discord.ui.TextInput(
                 label=field.label,
                 style=_to_text_style(field.field_type),
                 placeholder=field.placeholder or None,

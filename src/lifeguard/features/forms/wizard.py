@@ -12,6 +12,7 @@ from lifeguard.features.forms.schema import (
     BooleanOptions,
     FormCategory,
     FormField,
+    FormFieldType,
     NoteOptions,
     ScoreOptions,
     SelectOptions,
@@ -48,23 +49,56 @@ def _select_choice_label(options: SelectOptions, value: str) -> str:
     return value
 
 
-def _response_label(category: FormCategory | None, response: FormCategoryResponse) -> str:
+def _score_options(category: FormCategory) -> ScoreOptions:
+    return cast(ScoreOptions, category.options)
+
+
+def _select_options(category: FormCategory) -> SelectOptions:
+    return cast(SelectOptions, category.options)
+
+
+def _text_options(category: FormCategory) -> TextOptions:
+    return cast(TextOptions, category.options)
+
+
+def _note_options(category: FormCategory) -> NoteOptions:
+    return cast(NoteOptions, category.options)
+
+
+def _boolean_options(category: FormCategory) -> BooleanOptions:
+    return cast(BooleanOptions, category.options)
+
+
+def _bind_component_callback(
+    component: object,
+    callback: Callable[[discord.Interaction], Coroutine[Any, Any, None]],
+) -> None:
+    setattr(component, "callback", callback)
+
+
+def _response_label(
+    category: FormCategory | None, response: FormCategoryResponse
+) -> str:
     value = response.value
     if response.response_kind == "boolean":
         if category is not None:
-            options = cast(BooleanOptions, category.options)
-            return options.true_label if cast(bool, value) else options.false_label
+            boolean_options = _boolean_options(category)
+            return (
+                boolean_options.true_label
+                if cast(bool, value)
+                else boolean_options.false_label
+            )
         return "Yes" if cast(bool, value) else "No"
     if response.response_kind == "single_select":
         if category is not None:
-            options = cast(SelectOptions, category.options)
-            return _select_choice_label(options, cast(str, value))
+            select_options = _select_options(category)
+            return _select_choice_label(select_options, cast(str, value))
         return str(value)
     if response.response_kind == "multi_select":
         if category is not None:
-            options = cast(SelectOptions, category.options)
+            select_options = _select_options(category)
             return ", ".join(
-                _select_choice_label(options, selected)
+                _select_choice_label(select_options, selected)
                 for selected in cast(list[str], value)
             )
         return ", ".join(cast(list[str], value))
@@ -88,15 +122,18 @@ def validate_category_response(
         return None
 
     if category.response_kind == "score":
-        options = cast(ScoreOptions, category.options)
+        score_options = _score_options(category)
         score = cast(int, response.value)
-        if score < options.min_value or score > options.max_value:
-            return f"{category.name} must be between {options.min_value} and {options.max_value}."
+        if score < score_options.min_value or score > score_options.max_value:
+            return (
+                f"{category.name} must be between {score_options.min_value} "
+                f"and {score_options.max_value}."
+            )
         return None
 
     if category.response_kind in {"single_select", "multi_select"}:
-        options = cast(SelectOptions, category.options)
-        allowed_values = {choice.id for choice in options.choices}
+        select_options = _select_options(category)
+        allowed_values = {choice.id for choice in select_options.choices}
 
         if category.response_kind == "single_select":
             value = cast(str, response.value)
@@ -105,24 +142,32 @@ def validate_category_response(
             return None
 
         selected_values = cast(list[str], response.value)
-        if len(selected_values) < options.min_selected:
-            return f"{category.name} requires at least {options.min_selected} selection(s)."
-        if len(selected_values) > options.max_selected:
-            return f"{category.name} allows at most {options.max_selected} selection(s)."
+        if len(selected_values) < select_options.min_selected:
+            return (
+                f"{category.name} requires at least "
+                f"{select_options.min_selected} selection(s)."
+            )
+        if len(selected_values) > select_options.max_selected:
+            return (
+                f"{category.name} allows at most "
+                f"{select_options.max_selected} selection(s)."
+            )
         if any(value not in allowed_values for value in selected_values):
             return f"{category.name} has an invalid selection."
         return None
 
     if category.response_kind == "text":
-        options = cast(TextOptions, category.options)
+        text_options = _text_options(category)
         value = cast(str, response.value).strip()
-        if options.validation_regex and not re.match(options.validation_regex, value):
+        if text_options.validation_regex and not re.match(
+            text_options.validation_regex, value
+        ):
             return f"{category.name} doesn't match the required format."
         return None
 
     if category.response_kind == "note":
-        options = cast(NoteOptions, category.options)
-        if options.required_reference and not response.reference.strip():
+        note_options = _note_options(category)
+        if note_options.required_reference and not response.reference.strip():
             return f"{category.name} requires a reference."
         return None
 
@@ -316,27 +361,32 @@ class FormWizardView(discord.ui.View):
         if category is None:
             return
 
-        if category.response_kind in {"score", "boolean", "single_select", "multi_select"}:
+        if category.response_kind in {
+            "score",
+            "boolean",
+            "single_select",
+            "multi_select",
+        }:
             self.add_item(self._build_select(category))
         if self._supports_detail_modal(category):
-            response_button = discord.ui.Button(
+            response_button: discord.ui.Button[Any] = discord.ui.Button(
                 label=self._modal_button_label(category),
                 style=discord.ButtonStyle.secondary,
                 custom_id="wizard_open_modal",
             )
-            response_button.callback = self._on_open_modal
+            _bind_component_callback(response_button, self._on_open_modal)
             self.add_item(response_button)
 
         if self.current_step > 0:
-            back_button = discord.ui.Button(
+            back_button: discord.ui.Button[Any] = discord.ui.Button(
                 label="Back",
                 style=discord.ButtonStyle.secondary,
                 custom_id="wizard_back",
             )
-            back_button.callback = self._on_back
+            _bind_component_callback(back_button, self._on_back)
             self.add_item(back_button)
 
-        next_button = discord.ui.Button(
+        next_button: discord.ui.Button[Any] = discord.ui.Button(
             label=(
                 self.copy.final_step_next_label
                 if self.current_step == len(self.categories) - 1
@@ -346,52 +396,54 @@ class FormWizardView(discord.ui.View):
             custom_id="wizard_next",
             disabled=self._active_step_error() is not None,
         )
-        next_button.callback = self._on_next
+        _bind_component_callback(next_button, self._on_next)
         self.add_item(next_button)
 
-        cancel_button = discord.ui.Button(
+        cancel_button: discord.ui.Button[Any] = discord.ui.Button(
             label=self.copy.cancel_button_label,
             style=discord.ButtonStyle.danger,
             custom_id="wizard_cancel",
         )
-        cancel_button.callback = self._on_cancel
+        _bind_component_callback(cancel_button, self._on_cancel)
         self.add_item(cancel_button)
 
     def _add_summary_components(self) -> None:
-        edit_button = discord.ui.Button(
+        edit_button: discord.ui.Button[Any] = discord.ui.Button(
             label=self.copy.edit_button_label,
             style=discord.ButtonStyle.secondary,
             custom_id="wizard_edit",
         )
-        edit_button.callback = self._on_edit
+        _bind_component_callback(edit_button, self._on_edit)
         self.add_item(edit_button)
 
-        publish_button = discord.ui.Button(
+        publish_button: discord.ui.Button[Any] = discord.ui.Button(
             label=self.copy.publish_button_label,
             style=discord.ButtonStyle.success,
             custom_id="wizard_publish",
-            disabled=bool(self.categories) and any(
+            disabled=bool(self.categories)
+            and any(
                 validate_category_response(category, response)
                 for category in self.categories
                 for response in [self._response_for(category.id)]
                 if response is not None
-            ) or any(
+            )
+            or any(
                 category.required and self._response_for(category.id) is None
                 for category in self.categories
             ),
         )
-        publish_button.callback = self._on_publish
+        _bind_component_callback(publish_button, self._on_publish)
         self.add_item(publish_button)
 
-        cancel_button = discord.ui.Button(
+        cancel_button: discord.ui.Button[Any] = discord.ui.Button(
             label=self.copy.cancel_button_label,
             style=discord.ButtonStyle.danger,
             custom_id="wizard_cancel",
         )
-        cancel_button.callback = self._on_cancel
+        _bind_component_callback(cancel_button, self._on_cancel)
         self.add_item(cancel_button)
 
-    def _build_select(self, category: FormCategory) -> discord.ui.Select:
+    def _build_select(self, category: FormCategory) -> discord.ui.Select[Any]:
         response = self._response_for(category.id)
         options: list[discord.SelectOption]
         placeholder = (
@@ -403,7 +455,7 @@ class FormWizardView(discord.ui.View):
         max_values = 1
 
         if category.response_kind == "score":
-            score_options = cast(ScoreOptions, category.options)
+            score_options = _score_options(category)
             selected = response.value if response is not None else None
             options = [
                 discord.SelectOption(
@@ -414,7 +466,7 @@ class FormWizardView(discord.ui.View):
                 for value in range(score_options.min_value, score_options.max_value + 1)
             ]
         elif category.response_kind == "boolean":
-            boolean_options = cast(BooleanOptions, category.options)
+            boolean_options = _boolean_options(category)
             selected = response.value if response is not None else None
             options = [
                 discord.SelectOption(
@@ -429,10 +481,10 @@ class FormWizardView(discord.ui.View):
                 ),
             ]
         else:
-            select_options = cast(SelectOptions, category.options)
+            select_options = _select_options(category)
             selected_values = response.value if response is not None else []
             if not isinstance(selected_values, list):
-                selected_values = [selected_values]
+                selected_values = [cast(str, selected_values)]
             options = [
                 discord.SelectOption(
                     label=choice.label,
@@ -441,23 +493,33 @@ class FormWizardView(discord.ui.View):
                 )
                 for choice in select_options.choices
             ]
-            min_values = 1 if category.response_kind == "single_select" else select_options.min_selected
-            max_values = 1 if category.response_kind == "single_select" else select_options.max_selected
+            min_values = (
+                1
+                if category.response_kind == "single_select"
+                else select_options.min_selected
+            )
+            max_values = (
+                1
+                if category.response_kind == "single_select"
+                else select_options.max_selected
+            )
 
-        select = discord.ui.Select(
+        select: discord.ui.Select[Any] = discord.ui.Select(
             placeholder=placeholder,
             options=options,
             min_values=min_values,
             max_values=max_values,
             custom_id="wizard_select",
         )
-        select.callback = self._on_select_submit
+        _bind_component_callback(select, self._on_select_submit)
         return select
 
     def _modal_fields_for_category(self, category: FormCategory) -> list[FormField]:
         if category.response_kind == "text":
-            options = cast(TextOptions, category.options)
-            field_type = "paragraph" if options.style == "paragraph" else "short_text"
+            options = _text_options(category)
+            field_type: FormFieldType = (
+                "paragraph" if options.style == "paragraph" else "short_text"
+            )
             return [
                 FormField(
                     id="value",
@@ -487,7 +549,7 @@ class FormWizardView(discord.ui.View):
                 ),
             ]
 
-        note_options = cast(NoteOptions, category.options)
+        note_options = _note_options(category)
         reference_required = note_options.required_reference
         fields = [
             FormField(
@@ -534,7 +596,9 @@ class FormWizardView(discord.ui.View):
         if category is None:
             return
 
-        values = interaction.data.get("values", []) if interaction.data else []
+        data = cast(dict[str, object] | None, interaction.data)
+        raw_values = data.get("values") if data is not None else []
+        values = raw_values if isinstance(raw_values, list) else []
         existing = self._response_for(category.id)
         note = existing.note if existing is not None else ""
         reference = existing.reference if existing is not None else ""
@@ -573,10 +637,15 @@ class FormWizardView(discord.ui.View):
             if category.response_kind == "score":
                 if existing is None:
                     return
+                score_value = existing.value
+                if isinstance(score_value, bool) or not isinstance(score_value, int):
+                    raise ValueError(
+                        f"Score category {category.id!r} is missing an integer score"
+                    )
                 response = FormCategoryResponse(
                     category_id=category.id,
                     response_kind=category.response_kind,
-                    value=existing.value,
+                    value=score_value,
                     note=field_values.get("note", ""),
                     reference=field_values.get("reference", ""),
                 )
@@ -588,9 +657,7 @@ class FormWizardView(discord.ui.View):
                     note=existing.note if existing is not None else "",
                     reference=field_values.get("reference", ""),
                 )
-            self._upsert_response(
-                response
-            )
+            self._upsert_response(response)
             self._sync_components()
             await modal_interaction.response.edit_message(
                 embed=self.build_embed(),

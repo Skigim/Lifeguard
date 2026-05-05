@@ -22,7 +22,9 @@ def get_session(
     firestore: FirestoreClient,
     session_id: str,
 ) -> FormResponseSession | None:
-    document = firestore.collection(FORMS_SESSIONS_COLLECTION).document(session_id).get()
+    document = (
+        firestore.collection(FORMS_SESSIONS_COLLECTION).document(session_id).get()
+    )
     if not document.exists:
         return None
     return FormResponseSession.from_firestore(document.to_dict())

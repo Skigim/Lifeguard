@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Literal, TypeAlias
+from typing import Literal, TypeAlias, cast
 
 from lifeguard.utils import drop_none
 
@@ -66,7 +66,10 @@ class SelectOptions:
     @classmethod
     def from_firestore(cls, data: dict) -> "SelectOptions":
         return cls(
-            choices=[ChoiceOption.from_firestore(choice) for choice in data.get("choices", [])],
+            choices=[
+                ChoiceOption.from_firestore(choice)
+                for choice in data.get("choices", [])
+            ],
             min_selected=data.get("min_selected", 1),
             max_selected=data.get("max_selected", 1),
         )
@@ -141,19 +144,19 @@ def _ensure_response_kind(response_kind: str) -> ResponseKind:
         "single_select",
         "multi_select",
     }:
-        return response_kind
+        return cast(ResponseKind, response_kind)
     raise InvalidFormSchemaError(f"Unknown response kind: {response_kind}")
 
 
 def _ensure_field_type(field_type: str) -> FormFieldType:
     if field_type in {"short_text", "paragraph", "url"}:
-        return field_type
+        return cast(FormFieldType, field_type)
     raise InvalidFormSchemaError(f"Unknown field type: {field_type}")
 
 
 def _ensure_text_style(style: str) -> Literal["short", "paragraph"]:
     if style in {"short", "paragraph"}:
-        return style
+        return cast(Literal["short", "paragraph"], style)
     raise InvalidFormSchemaError(f"Unknown text style: {style}")
 
 
@@ -209,9 +212,7 @@ def _options_to_firestore(
         return resolved_options.to_firestore()
     if resolved_kind == "note" and isinstance(resolved_options, NoteOptions):
         return resolved_options.to_firestore()
-    raise InvalidFormSchemaError(
-        f"Options do not match response kind: {resolved_kind}"
-    )
+    raise InvalidFormSchemaError(f"Options do not match response kind: {resolved_kind}")
 
 
 @dataclass(frozen=True)

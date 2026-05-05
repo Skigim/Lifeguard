@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, MutableSequence
 from dataclasses import dataclass, field
+from typing import overload
 
 from lifeguard.features.forms.schema import FormCategory, FormField, ScoreOptions
 
@@ -9,7 +10,9 @@ from lifeguard.features.forms.schema import FormCategory, FormField, ScoreOption
 def _score_options_for_category(category: FormCategory) -> ScoreOptions:
     if isinstance(category.options, ScoreOptions):
         return category.options
-    raise TypeError("Content review categories must use score options during migration.")
+    raise TypeError(
+        "Content review categories must use score options during migration."
+    )
 
 
 SubmissionField = FormField
@@ -71,9 +74,20 @@ class _ReviewCategoryList(MutableSequence[ReviewCategory]):
     def __len__(self) -> int:
         return len(self._categories)
 
-    def __getitem__(self, index: int | slice) -> ReviewCategory | list[ReviewCategory]:
+    @overload
+    def __getitem__(self, index: int) -> ReviewCategory: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> MutableSequence[ReviewCategory]: ...
+
+    def __getitem__(
+        self, index: int | slice
+    ) -> ReviewCategory | MutableSequence[ReviewCategory]:
         if isinstance(index, slice):
-            return [ReviewCategory.from_form_category(category) for category in self._categories[index]]
+            return [
+                ReviewCategory.from_form_category(category)
+                for category in self._categories[index]
+            ]
         return ReviewCategory.from_form_category(self._categories[index])
 
     def __setitem__(
@@ -84,11 +98,17 @@ class _ReviewCategoryList(MutableSequence[ReviewCategory]):
         if isinstance(index, slice):
             if not isinstance(value, Iterable):
                 raise TypeError("Slice assignment requires an iterable of categories.")
-            self._categories[index] = [_as_form_category(category) for category in value]
+            self._categories[index] = [
+                _as_form_category(category) for category in value
+            ]
             return
 
-        if isinstance(value, Iterable) and not isinstance(value, (ReviewCategory, FormCategory)):
-            raise TypeError("Single category assignment requires a ReviewCategory or FormCategory.")
+        if isinstance(value, Iterable) and not isinstance(
+            value, (ReviewCategory, FormCategory)
+        ):
+            raise TypeError(
+                "Single category assignment requires a ReviewCategory or FormCategory."
+            )
         self._categories[index] = _as_form_category(value)
 
     def __delitem__(self, index: int | slice) -> None:
@@ -193,8 +213,12 @@ class ContentReviewConfig:
             sticky_message_id=data.get("sticky_message_id"),
             ticket_category_id=data.get("ticket_category_id"),
             reviewer_role_ids=data.get("reviewer_role_ids", []),
-            submission_fields=[FormField.from_firestore(f) for f in data.get("submission_fields", [])],
-            form_categories=[_form_category_from_firestore(c) for c in raw_form_categories],
+            submission_fields=[
+                FormField.from_firestore(f) for f in data.get("submission_fields", [])
+            ],
+            form_categories=[
+                _form_category_from_firestore(c) for c in raw_form_categories
+            ],
             dm_on_complete=data.get("dm_on_complete", True),
             leaderboard_enabled=data.get("leaderboard_enabled", True),
             review_timeout_minutes=data.get("review_timeout_minutes", 15),

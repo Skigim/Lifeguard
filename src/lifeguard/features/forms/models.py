@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Literal, get_args
+from typing import Any, Literal, cast, get_args
 
 from lifeguard.features.forms.schema import ResponseKind
 
@@ -14,13 +14,13 @@ _SESSION_STATUSES = set(get_args(SessionStatus))
 
 def _ensure_response_kind(response_kind: str) -> ResponseKind:
     if response_kind in _RESPONSE_KINDS:
-        return response_kind
+        return cast(ResponseKind, response_kind)
     raise ValueError(f"Unknown response kind: {response_kind}")
 
 
 def _ensure_session_status(status: str) -> SessionStatus:
     if status in _SESSION_STATUSES:
-        return status
+        return cast(SessionStatus, status)
     raise ValueError(f"Unknown session status: {status}")
 
 
@@ -44,7 +44,9 @@ def _ensure_response_value(
         return value
 
     if response_kind == "multi_select":
-        if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        if not isinstance(value, list) or any(
+            not isinstance(item, str) for item in value
+        ):
             raise ValueError("Multi-select responses require a list of string values")
         return value
 
@@ -84,10 +86,13 @@ class FormCategoryResponse:
 
     @classmethod
     def from_firestore(cls, data: dict) -> "FormCategoryResponse":
+        if "value" not in data:
+            raise ValueError("Form category response missing value")
+
         return cls(
             category_id=data["category_id"],
             response_kind=_ensure_response_kind(data["response_kind"]),
-            value=data.get("value"),
+            value=cast(int | str | bool | list[str], data["value"]),
             note=data.get("note", ""),
             reference=data.get("reference", ""),
         )

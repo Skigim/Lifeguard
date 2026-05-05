@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Coroutine
+from typing import TYPE_CHECKING, Any
 
 import discord
 
@@ -15,6 +16,13 @@ if TYPE_CHECKING:
     from google.cloud.firestore import Client as FirestoreClient
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _bind_component_callback(
+    component: object,
+    callback: Callable[[discord.Interaction], Coroutine[Any, Any, None]],
+) -> None:
+    setattr(component, "callback", callback)
 
 
 class SubmitButtonView(discord.ui.View):
@@ -63,13 +71,13 @@ class SubmitButtonView(discord.ui.View):
     def __init__(self, label: str = "Submit Content", emoji: str = "📝") -> None:
         super().__init__(timeout=None)
         resolved_emoji = self._resolved_emoji(emoji)
-        button = discord.ui.Button(
+        button: discord.ui.Button[Any] = discord.ui.Button(
             label=label,
             style=discord.ButtonStyle.primary,
             custom_id="content_review:submit_content",
             emoji=resolved_emoji,
         )
-        button.callback = self._button_callback
+        _bind_component_callback(button, self._button_callback)
         self.add_item(button)
 
     async def _button_callback(self, interaction: discord.Interaction) -> None:
@@ -108,15 +116,15 @@ async def resolve_submission_text_channel(
     if not config.submission_channel_id:
         return None
 
-    channel = guild.get_channel(config.submission_channel_id)
-    if channel is None:
+    resolved_channel: object | None = guild.get_channel(config.submission_channel_id)
+    if resolved_channel is None:
         try:
-            channel = await guild.fetch_channel(config.submission_channel_id)
+            resolved_channel = await guild.fetch_channel(config.submission_channel_id)
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             return None
 
-    if isinstance(channel, discord.TextChannel):
-        return channel
+    if isinstance(resolved_channel, discord.TextChannel):
+        return resolved_channel
     return None
 
 
