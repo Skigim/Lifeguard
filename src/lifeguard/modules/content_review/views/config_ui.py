@@ -11,12 +11,9 @@ from typing import TYPE_CHECKING
 
 import discord
 
+from lifeguard.features.forms.schema import FormCategory, FormField
 from lifeguard.modules.content_review import repo
-from lifeguard.modules.content_review.config import (
-    ContentReviewConfig,
-    ReviewCategory,
-    SubmissionField,
-)
+from lifeguard.modules.content_review.config import ContentReviewConfig
 
 if TYPE_CHECKING:
     from lifeguard.modules.content_review.cog import ContentReviewCog
@@ -505,7 +502,7 @@ class AddFieldModal(discord.ui.Modal, title="Add Submission Field"):
 class RemoveFieldView(discord.ui.View):
     """View for removing a submission field."""
 
-    def __init__(self, cog: "ContentReviewCog", fields: list[SubmissionField]) -> None:
+    def __init__(self, cog: "ContentReviewCog", fields: list[FormField]) -> None:
         super().__init__(timeout=60)
         self.cog = cog
         self.fields = fields
@@ -581,9 +578,7 @@ class AddCategoryModal(discord.ui.Modal, title="Add Review Category"):
 class RemoveCategoryView(discord.ui.View):
     """View for removing a review category."""
 
-    def __init__(
-        self, cog: "ContentReviewCog", categories: list[ReviewCategory]
-    ) -> None:
+    def __init__(self, cog: "ContentReviewCog", categories: list[FormCategory]) -> None:
         super().__init__(timeout=60)
         self.cog = cog
         self.categories = categories
