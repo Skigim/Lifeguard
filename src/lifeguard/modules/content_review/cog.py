@@ -1700,7 +1700,6 @@ class ContentReviewCog(commands.Cog):
             return
 
         now = datetime.now(timezone.utc)
-        self._save_completed_form_session(session, completed_at=now)
         payload = session_to_review_payload(session)
 
         # Create review record
@@ -1713,7 +1712,7 @@ class ContentReviewCog(commands.Cog):
             scores=payload.scores,
             notes=payload.notes,
             created_at=session.created_at,
-            completed_at=session.completed_at or now,
+            completed_at=now,
         )
 
         repo.create_review(self.firestore, review)
@@ -1735,6 +1734,8 @@ class ContentReviewCog(commands.Cog):
         )
         reviewer_profile.total_reviews_given += 1
         repo.save_profile(self.firestore, reviewer_profile)
+
+        self._save_completed_form_session(session, completed_at=now)
 
         # Get users for embed
         reviewer = interaction.user

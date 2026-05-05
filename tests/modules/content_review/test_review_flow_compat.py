@@ -392,7 +392,7 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
             view=None,
         )
 
-    async def test_publish_review_saves_completed_generic_form_session_first(self) -> None:
+    async def test_publish_review_saves_completed_generic_form_session_after_legacy_persistence(self) -> None:
         from lifeguard.modules.content_review.cog import ContentReviewCog
 
         submitter = MagicMock()
@@ -442,12 +442,14 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
             "lifeguard.modules.content_review.cog.repo.create_review",
             side_effect=lambda *_args, **_kwargs: call_sequence.append("create_review"),
         ), patch(
-            "lifeguard.modules.content_review.cog.repo.update_submission"
+            "lifeguard.modules.content_review.cog.repo.update_submission",
+            side_effect=lambda *_args, **_kwargs: call_sequence.append("update_submission"),
         ), patch(
             "lifeguard.modules.content_review.cog.repo.get_or_create_profile",
             side_effect=[MagicMock(), SimpleNamespace(total_reviews_given=0)],
         ), patch(
-            "lifeguard.modules.content_review.cog.repo.save_profile"
+            "lifeguard.modules.content_review.cog.repo.save_profile",
+            side_effect=lambda *_args, **_kwargs: call_sequence.append("save_profile"),
         ), patch(
             "lifeguard.modules.content_review.cog.build_review_embed",
             return_value=discord.Embed(title="Review"),
@@ -457,7 +459,68 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.status, "completed")
         self.assertIsNotNone(session.completed_at)
         save_session.assert_called_once_with(cog.firestore, session)
-        self.assertEqual(call_sequence[:2], ["save_session", "create_review"])
+        self.assertEqual(
+            call_sequence,
+            [
+                "create_review",
+                "update_submission",
+                "save_profile",
+                "save_profile",
+                "save_session",
+            ],
+        )
+
+    async def test_publish_review_does_not_complete_generic_session_when_legacy_review_save_fails(self) -> None:
+        from lifeguard.modules.content_review.cog import ContentReviewCog
+
+        bot = SimpleNamespace(
+            lifeguard_firestore=object(),
+            fetch_user=AsyncMock(),
+        )
+        cog = ContentReviewCog(bot)
+        config = self._build_config()
+        submission = Submission(
+            id="submission-1",
+            guild_id=123,
+            channel_id=999,
+            message_id=1001,
+            submitter_id=777,
+            fields={"game_link": "https://example.invalid/replay"},
+        )
+        session = FormResponseSession(
+            id="content_review:submission-1:456",
+            guild_id=123,
+            feature_key="content_review",
+            owner_id=submission.id,
+            responder_id=456,
+        )
+        original_completed_at = session.completed_at
+        interaction = self._build_interaction(
+            guild=SimpleNamespace(id=123, name="Lifeguard Guild"),
+            user_id=456,
+        )
+
+        with patch(
+            "lifeguard.modules.content_review.cog.session_to_review_payload",
+            create=True,
+            return_value=ReviewPayload(scores={}, notes={}),
+        ), patch(
+            "lifeguard.features.forms.repo.save_session"
+        ) as save_session, patch(
+            "lifeguard.modules.content_review.cog.repo.create_review",
+            side_effect=RuntimeError("review create failed"),
+        ), patch(
+            "lifeguard.modules.content_review.cog.repo.update_submission"
+        ) as update_submission:
+            with self.assertRaisesRegex(RuntimeError, "review create failed"):
+                await cog._publish_review(interaction, config, submission, session)
+
+        save_session.assert_not_called()
+        update_submission.assert_not_called()
+        self.assertEqual(session.status, "draft")
+        self.assertIs(session.completed_at, original_completed_at)
+        self.assertEqual(submission.status, "pending")
+        interaction.edit_original_response.assert_not_awaited()
 
 
 if __name__ == "__main__":
