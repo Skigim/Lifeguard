@@ -223,6 +223,9 @@ class FormField:
     placeholder: str = ""
     validation_regex: str = ""
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "field_type", _ensure_field_type(self.field_type))
+
     def to_firestore(self) -> dict:
         return drop_none(asdict(self))
 

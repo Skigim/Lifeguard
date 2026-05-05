@@ -206,6 +206,16 @@ class FormSchemaTests(unittest.TestCase):
                 }
             )
 
+    def test_form_field_rejects_unknown_field_type_during_construction(self) -> None:
+        from lifeguard.features.forms.schema import FormField, InvalidFormSchemaError
+
+        with self.assertRaises(InvalidFormSchemaError):
+            FormField(
+                id="bad",
+                label="Bad",
+                field_type="markdown",
+            )
+
     def test_unknown_response_kind_is_rejected(self) -> None:
         from lifeguard.features.forms.schema import InvalidFormSchemaError, FormCategory
 
