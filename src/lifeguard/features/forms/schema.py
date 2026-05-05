@@ -78,13 +78,16 @@ class TextOptions:
     placeholder: str = ""
     validation_regex: str = ""
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "style", _ensure_text_style(self.style))
+
     def to_firestore(self) -> dict:
         return drop_none(asdict(self))
 
     @classmethod
     def from_firestore(cls, data: dict) -> "TextOptions":
         return cls(
-            style=data.get("style", "short"),
+            style=_ensure_text_style(data.get("style", "short")),
             placeholder=data.get("placeholder", ""),
             validation_regex=data.get("validation_regex", ""),
         )
@@ -146,6 +149,12 @@ def _ensure_field_type(field_type: str) -> FormFieldType:
     if field_type in {"short_text", "paragraph", "url"}:
         return field_type
     raise InvalidFormSchemaError(f"Unknown field type: {field_type}")
+
+
+def _ensure_text_style(style: str) -> Literal["short", "paragraph"]:
+    if style in {"short", "paragraph"}:
+        return style
+    raise InvalidFormSchemaError(f"Unknown text style: {style}")
 
 
 def _default_options_for_kind(response_kind: ResponseKind) -> FormCategoryOptions:
@@ -247,6 +256,9 @@ class FormCategory:
                 "options",
                 _default_options_for_kind(resolved_kind),
             )
+            return
+
+        _options_to_firestore(resolved_kind, self.options)
 
     def to_firestore(self) -> dict:
         return {

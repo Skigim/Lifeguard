@@ -128,6 +128,27 @@ class FormSchemaTests(unittest.TestCase):
         self.assertEqual(restored_boolean.options.true_label, "Approve")
         self.assertTrue(restored_note.options.required_reference)
 
+    def test_form_category_rejects_mismatched_options_during_construction(self) -> None:
+        from lifeguard.features.forms.schema import (
+            FormCategory,
+            InvalidFormSchemaError,
+            NoteOptions,
+        )
+
+        with self.assertRaises(InvalidFormSchemaError):
+            FormCategory(
+                id="overall",
+                name="Overall",
+                response_kind="score",
+                options=NoteOptions(),
+            )
+
+    def test_text_options_from_firestore_rejects_unsupported_style(self) -> None:
+        from lifeguard.features.forms.schema import InvalidFormSchemaError, TextOptions
+
+        with self.assertRaises(InvalidFormSchemaError):
+            TextOptions.from_firestore({"style": "markdown"})
+
     def test_multi_select_category_round_trips_selection_limits(self) -> None:
         from lifeguard.features.forms.schema import (
             ChoiceOption,
