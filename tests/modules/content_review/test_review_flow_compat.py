@@ -72,17 +72,21 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
         )
         sentinel_modal = object()
 
-        with patch(
-            "lifeguard.modules.content_review.cog.repo.get_config",
-            return_value=config,
-        ), patch(
-            "lifeguard.modules.content_review.cog.FormSubmissionModal",
-            create=True,
-            return_value=sentinel_modal,
-        ) as shared_modal_cls, patch(
-            "lifeguard.modules.content_review.cog.SubmissionModal",
-            create=True,
-        ) as legacy_modal_cls:
+        with (
+            patch(
+                "lifeguard.modules.content_review.cog.repo.get_config",
+                return_value=config,
+            ),
+            patch(
+                "lifeguard.modules.content_review.cog.FormSubmissionModal",
+                create=True,
+                return_value=sentinel_modal,
+            ) as shared_modal_cls,
+            patch(
+                "lifeguard.modules.content_review.cog.SubmissionModal",
+                create=True,
+            ) as legacy_modal_cls,
+        ):
             await cog._handle_submit_button(interaction)
 
         shared_modal_cls.assert_called_once()
@@ -92,7 +96,9 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(callable(shared_modal_cls.call_args.args[2]))
         interaction.response.send_modal.assert_awaited_once_with(sentinel_modal)
 
-    async def test_handle_submit_button_with_oversized_config_returns_ephemeral_error(self) -> None:
+    async def test_handle_submit_button_with_oversized_config_returns_ephemeral_error(
+        self,
+    ) -> None:
         from lifeguard.modules.content_review.cog import ContentReviewCog
 
         bot = SimpleNamespace(lifeguard_firestore=object())
@@ -128,7 +134,9 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
             ephemeral=True,
         )
 
-    async def test_start_review_uses_shared_form_wizard_with_session_draft(self) -> None:
+    async def test_start_review_uses_shared_form_wizard_with_session_draft(
+        self,
+    ) -> None:
         from lifeguard.modules.content_review.cog import ContentReviewCog
 
         bot = SimpleNamespace(lifeguard_firestore=object())
@@ -156,27 +164,34 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
         wizard = MagicMock()
         wizard.build_embed.return_value = object()
 
-        with patch(
-            "lifeguard.modules.content_review.cog.repo.get_config",
-            return_value=config,
-        ), patch(
-            "lifeguard.modules.content_review.cog.repo.get_submission",
-            return_value=submission,
-        ), patch(
-            "lifeguard.modules.content_review.cog.repo.claim_submission_for_review",
-            return_value=submission,
-        ), patch(
-            "lifeguard.modules.content_review.cog.build_review_session_draft",
-            create=True,
-            return_value=session,
-        ) as build_draft, patch(
-            "lifeguard.modules.content_review.cog.FormWizardView",
-            create=True,
-            return_value=wizard,
-        ) as shared_wizard_cls, patch(
-            "lifeguard.modules.content_review.cog.ReviewWizardView",
-            create=True,
-        ) as legacy_wizard_cls:
+        with (
+            patch(
+                "lifeguard.modules.content_review.cog.repo.get_config",
+                return_value=config,
+            ),
+            patch(
+                "lifeguard.modules.content_review.cog.repo.get_submission",
+                return_value=submission,
+            ),
+            patch(
+                "lifeguard.modules.content_review.cog.repo.claim_submission_for_review",
+                return_value=submission,
+            ),
+            patch(
+                "lifeguard.modules.content_review.cog.build_review_session_draft",
+                create=True,
+                return_value=session,
+            ) as build_draft,
+            patch(
+                "lifeguard.modules.content_review.cog.FormWizardView",
+                create=True,
+                return_value=wizard,
+            ) as shared_wizard_cls,
+            patch(
+                "lifeguard.modules.content_review.cog.ReviewWizardView",
+                create=True,
+            ) as legacy_wizard_cls,
+        ):
             await cog._start_review(interaction, submission.id)
 
         build_draft.assert_called_once_with(
@@ -186,13 +201,17 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
             categories=config.form_categories,
         )
         shared_wizard_cls.assert_called_once()
-        self.assertEqual(shared_wizard_cls.call_args.kwargs["categories"], config.form_categories)
+        self.assertEqual(
+            shared_wizard_cls.call_args.kwargs["categories"], config.form_categories
+        )
         self.assertIs(shared_wizard_cls.call_args.kwargs["session"], session)
         self.assertEqual(
             shared_wizard_cls.call_args.kwargs["timeout"],
             config.review_timeout_minutes * 60,
         )
-        self.assertTrue(callable(shared_wizard_cls.call_args.kwargs["on_publish_callback"]))
+        self.assertTrue(
+            callable(shared_wizard_cls.call_args.kwargs["on_publish_callback"])
+        )
         legacy_wizard_cls.assert_not_called()
         interaction.response.send_message.assert_awaited_once_with(
             embed=wizard.build_embed.return_value,
@@ -203,7 +222,56 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
         wizard.attach_message.assert_called_once_with(
             interaction.original_response.return_value
         )
-        self.assertIs(cog._pending_reviews[f"{interaction.user.id}:{submission.id}"], wizard)
+        self.assertIs(
+            cog._pending_reviews[f"{interaction.user.id}:{submission.id}"], wizard
+        )
+
+    async def test_start_review_releases_claim_if_initial_wizard_send_fails(
+        self,
+    ) -> None:
+        from lifeguard.modules.content_review.cog import ContentReviewCog
+
+        bot = SimpleNamespace(lifeguard_firestore=object())
+        cog = ContentReviewCog(bot)
+        config = self._build_config()
+        submission = Submission(
+            id="submission-1",
+            guild_id=123,
+            channel_id=999,
+            message_id=1001,
+            submitter_id=777,
+            fields={"game_link": "https://example.invalid/replay"},
+        )
+        interaction = self._build_interaction(
+            guild=SimpleNamespace(id=123),
+            user_id=456,
+        )
+        interaction.response.send_message = AsyncMock(
+            side_effect=RuntimeError("send failed")
+        )
+
+        with (
+            patch(
+                "lifeguard.modules.content_review.cog.repo.get_config",
+                return_value=config,
+            ),
+            patch(
+                "lifeguard.modules.content_review.cog.repo.get_submission",
+                return_value=submission,
+            ),
+            patch(
+                "lifeguard.modules.content_review.cog.repo.claim_submission_for_review",
+                return_value=submission,
+            ),
+            patch(
+                "lifeguard.modules.content_review.cog.repo.release_submission_claim",
+            ) as release_claim,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "send failed"):
+                await cog._start_review(interaction, submission.id)
+
+        release_claim.assert_called_once_with(cog.firestore, submission.id)
+        self.assertNotIn(f"{interaction.user.id}:{submission.id}", cog._pending_reviews)
 
     async def test_start_review_preserves_reviewer_facing_wizard_copy(self) -> None:
         from lifeguard.modules.content_review.cog import ContentReviewCog
@@ -224,32 +292,42 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
             user_id=456,
         )
 
-        with patch(
-            "lifeguard.modules.content_review.cog.repo.get_config",
-            return_value=config,
-        ), patch(
-            "lifeguard.modules.content_review.cog.repo.get_submission",
-            return_value=submission,
-        ), patch(
-            "lifeguard.modules.content_review.cog.repo.claim_submission_for_review",
-            return_value=submission,
+        with (
+            patch(
+                "lifeguard.modules.content_review.cog.repo.get_config",
+                return_value=config,
+            ),
+            patch(
+                "lifeguard.modules.content_review.cog.repo.get_submission",
+                return_value=submission,
+            ),
+            patch(
+                "lifeguard.modules.content_review.cog.repo.claim_submission_for_review",
+                return_value=submission,
+            ),
         ):
             await cog._start_review(interaction, submission.id)
 
         wizard = interaction.response.send_message.await_args.kwargs["view"]
-        self.assertEqual(interaction.response.send_message.await_args.kwargs["embed"].title, "Step 1/1: Overall")
+        self.assertEqual(
+            interaction.response.send_message.await_args.kwargs["embed"].title,
+            "Step 1/1: Overall",
+        )
         self.assertEqual(
             interaction.response.send_message.await_args.kwargs["embed"].description,
             "Rate this category.",
         )
 
-        select = next(item for item in wizard.children if isinstance(item, discord.ui.Select))
+        select = next(
+            item for item in wizard.children if isinstance(item, discord.ui.Select)
+        )
         self.assertEqual(select.placeholder, "Select score (1-5)")
 
         note_buttons = [
             item
             for item in wizard.children
-            if isinstance(item, discord.ui.Button) and item.custom_id == "wizard_open_modal"
+            if isinstance(item, discord.ui.Button)
+            and item.custom_id == "wizard_open_modal"
         ]
         self.assertEqual(note_buttons, [])
 
@@ -268,7 +346,8 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
         note_button = next(
             item
             for item in wizard.children
-            if isinstance(item, discord.ui.Button) and item.custom_id == "wizard_open_modal"
+            if isinstance(item, discord.ui.Button)
+            and item.custom_id == "wizard_open_modal"
         )
         self.assertEqual(note_button.label, "Add Note")
 
@@ -286,7 +365,8 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
         note_button = next(
             item
             for item in wizard.children
-            if isinstance(item, discord.ui.Button) and item.custom_id == "wizard_open_modal"
+            if isinstance(item, discord.ui.Button)
+            and item.custom_id == "wizard_open_modal"
         )
         self.assertEqual(note_button.label, "✅ Note")
 
@@ -304,7 +384,8 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
         publish_button = next(
             item
             for item in wizard.children
-            if isinstance(item, discord.ui.Button) and item.custom_id == "wizard_publish"
+            if isinstance(item, discord.ui.Button)
+            and item.custom_id == "wizard_publish"
         )
         self.assertEqual(publish_button.label, "Publish Review")
 
@@ -326,7 +407,9 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
             view=None,
         )
 
-    async def test_publish_review_translates_shared_session_to_legacy_review_record(self) -> None:
+    async def test_publish_review_translates_shared_session_to_legacy_review_record(
+        self,
+    ) -> None:
         from lifeguard.modules.content_review.cog import ContentReviewCog
 
         submitter = MagicMock()
@@ -381,24 +464,30 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        with patch(
-            "lifeguard.modules.content_review.cog.session_to_review_payload",
-            create=True,
-            return_value=translated_payload,
-        ) as translate_payload, patch(
-            "lifeguard.features.forms.repo.save_session"
-        ), patch(
-            "lifeguard.modules.content_review.cog.repo.create_review"
-        ) as create_review, patch(
-            "lifeguard.modules.content_review.cog.repo.update_submission"
-        ) as update_submission, patch(
-            "lifeguard.modules.content_review.cog.repo.get_or_create_profile",
-            side_effect=[submitter_profile, reviewer_profile],
-        ), patch(
-            "lifeguard.modules.content_review.cog.repo.save_profile"
-        ) as save_profile, patch(
-            "lifeguard.modules.content_review.cog.build_review_embed",
-            return_value=embed,
+        with (
+            patch(
+                "lifeguard.modules.content_review.cog.session_to_review_payload",
+                create=True,
+                return_value=translated_payload,
+            ) as translate_payload,
+            patch("lifeguard.features.forms.repo.save_session"),
+            patch(
+                "lifeguard.modules.content_review.cog.repo.create_review"
+            ) as create_review,
+            patch(
+                "lifeguard.modules.content_review.cog.repo.update_submission"
+            ) as update_submission,
+            patch(
+                "lifeguard.modules.content_review.cog.repo.get_or_create_profile",
+                side_effect=[submitter_profile, reviewer_profile],
+            ),
+            patch(
+                "lifeguard.modules.content_review.cog.repo.save_profile"
+            ) as save_profile,
+            patch(
+                "lifeguard.modules.content_review.cog.build_review_embed",
+                return_value=embed,
+            ),
         ):
             await cog._publish_review(interaction, config, submission, session)
 
@@ -428,7 +517,9 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
             view=None,
         )
 
-    async def test_publish_review_saves_completed_generic_form_session_after_legacy_persistence(self) -> None:
+    async def test_publish_review_saves_completed_generic_form_session_after_legacy_persistence(
+        self,
+    ) -> None:
         from lifeguard.modules.content_review.cog import ContentReviewCog
 
         submitter = MagicMock()
@@ -467,28 +558,44 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
         interaction = self._build_interaction(guild=guild, user_id=456)
         call_sequence: list[str] = []
 
-        with patch(
-            "lifeguard.modules.content_review.cog.session_to_review_payload",
-            create=True,
-            return_value=ReviewPayload(scores={}, notes={}),
-        ), patch(
-            "lifeguard.features.forms.repo.save_session",
-            side_effect=lambda *_args, **_kwargs: call_sequence.append("save_session"),
-        ) as save_session, patch(
-            "lifeguard.modules.content_review.cog.repo.create_review",
-            side_effect=lambda *_args, **_kwargs: call_sequence.append("create_review"),
-        ), patch(
-            "lifeguard.modules.content_review.cog.repo.update_submission",
-            side_effect=lambda *_args, **_kwargs: call_sequence.append("update_submission"),
-        ), patch(
-            "lifeguard.modules.content_review.cog.repo.get_or_create_profile",
-            side_effect=[MagicMock(), SimpleNamespace(total_reviews_given=0)],
-        ), patch(
-            "lifeguard.modules.content_review.cog.repo.save_profile",
-            side_effect=lambda *_args, **_kwargs: call_sequence.append("save_profile"),
-        ), patch(
-            "lifeguard.modules.content_review.cog.build_review_embed",
-            return_value=discord.Embed(title="Review"),
+        with (
+            patch(
+                "lifeguard.modules.content_review.cog.session_to_review_payload",
+                create=True,
+                return_value=ReviewPayload(scores={}, notes={}),
+            ),
+            patch(
+                "lifeguard.features.forms.repo.save_session",
+                side_effect=lambda *_args, **_kwargs: call_sequence.append(
+                    "save_session"
+                ),
+            ) as save_session,
+            patch(
+                "lifeguard.modules.content_review.cog.repo.create_review",
+                side_effect=lambda *_args, **_kwargs: call_sequence.append(
+                    "create_review"
+                ),
+            ),
+            patch(
+                "lifeguard.modules.content_review.cog.repo.update_submission",
+                side_effect=lambda *_args, **_kwargs: call_sequence.append(
+                    "update_submission"
+                ),
+            ),
+            patch(
+                "lifeguard.modules.content_review.cog.repo.get_or_create_profile",
+                side_effect=[MagicMock(), SimpleNamespace(total_reviews_given=0)],
+            ),
+            patch(
+                "lifeguard.modules.content_review.cog.repo.save_profile",
+                side_effect=lambda *_args, **_kwargs: call_sequence.append(
+                    "save_profile"
+                ),
+            ),
+            patch(
+                "lifeguard.modules.content_review.cog.build_review_embed",
+                return_value=discord.Embed(title="Review"),
+            ),
         ):
             await cog._publish_review(interaction, config, submission, session)
 
@@ -506,7 +613,9 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-    async def test_publish_review_does_not_complete_generic_session_when_legacy_review_save_fails(self) -> None:
+    async def test_publish_review_does_not_complete_generic_session_when_legacy_review_save_fails(
+        self,
+    ) -> None:
         from lifeguard.modules.content_review.cog import ContentReviewCog
 
         bot = SimpleNamespace(
@@ -536,18 +645,21 @@ class ContentReviewFlowCompatTests(unittest.IsolatedAsyncioTestCase):
             user_id=456,
         )
 
-        with patch(
-            "lifeguard.modules.content_review.cog.session_to_review_payload",
-            create=True,
-            return_value=ReviewPayload(scores={}, notes={}),
-        ), patch(
-            "lifeguard.features.forms.repo.save_session"
-        ) as save_session, patch(
-            "lifeguard.modules.content_review.cog.repo.create_review",
-            side_effect=RuntimeError("review create failed"),
-        ), patch(
-            "lifeguard.modules.content_review.cog.repo.update_submission"
-        ) as update_submission:
+        with (
+            patch(
+                "lifeguard.modules.content_review.cog.session_to_review_payload",
+                create=True,
+                return_value=ReviewPayload(scores={}, notes={}),
+            ),
+            patch("lifeguard.features.forms.repo.save_session") as save_session,
+            patch(
+                "lifeguard.modules.content_review.cog.repo.create_review",
+                side_effect=RuntimeError("review create failed"),
+            ),
+            patch(
+                "lifeguard.modules.content_review.cog.repo.update_submission"
+            ) as update_submission,
+        ):
             with self.assertRaisesRegex(RuntimeError, "review create failed"):
                 await cog._publish_review(interaction, config, submission, session)
 

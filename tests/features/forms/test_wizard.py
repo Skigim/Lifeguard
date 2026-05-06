@@ -45,13 +45,42 @@ class FormWizardHelperTests(unittest.TestCase):
             FormCategoryResponse(
                 category_id="clip",
                 response_kind="text",
-                value="http://invalid.example",
+                value="invalid.example",
             ),
         )
 
         self.assertEqual(error, "Clip doesn't match the required format.")
 
-    def test_build_summary_lines_use_category_names_and_user_facing_labels(self) -> None:
+    def test_validate_text_response_reports_invalid_regex_configuration(self) -> None:
+        from lifeguard.features.forms.models import FormCategoryResponse
+        from lifeguard.features.forms.schema import FormCategory, TextOptions
+        from lifeguard.features.forms.wizard import validate_category_response
+
+        category = FormCategory(
+            id="clip",
+            name="Clip",
+            response_kind="text",
+            required=True,
+            options=TextOptions(style="short", validation_regex="["),
+        )
+
+        error = validate_category_response(
+            category,
+            FormCategoryResponse(
+                category_id="clip",
+                response_kind="text",
+                value="https://valid.example",
+            ),
+        )
+
+        self.assertEqual(
+            error,
+            "Clip has an invalid validation pattern. Please contact an administrator.",
+        )
+
+    def test_build_summary_lines_use_category_names_and_user_facing_labels(
+        self,
+    ) -> None:
         from lifeguard.features.forms.models import FormCategoryResponse
         from lifeguard.features.forms.schema import (
             BooleanOptions,
@@ -123,7 +152,7 @@ class FormWizardHelperTests(unittest.TestCase):
                     response_kind="multi_select",
                     value=["clear", "concise"],
                 ),
-            ]
+            ],
         )
 
         self.assertEqual(
@@ -155,7 +184,9 @@ class FormSubmissionModalTests(unittest.IsolatedAsyncioTestCase):
                 on_submit_callback=AsyncMock(),
             )
 
-    async def test_modal_builds_inputs_and_blocks_invalid_regex_submission(self) -> None:
+    async def test_modal_builds_inputs_and_blocks_invalid_regex_submission(
+        self,
+    ) -> None:
         from lifeguard.features.forms.schema import FormField
         from lifeguard.features.forms.submission_modal import FormSubmissionModal
 
@@ -179,9 +210,11 @@ class FormSubmissionModalTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(modal._field_inputs["clip_url"].style, discord.TextStyle.short)
-        self.assertEqual(modal._field_inputs["summary"].style, discord.TextStyle.paragraph)
+        self.assertEqual(
+            modal._field_inputs["summary"].style, discord.TextStyle.paragraph
+        )
 
-        modal._field_inputs["clip_url"]._value = "http://invalid.example"
+        modal._field_inputs["clip_url"]._value = "invalid.example"
         modal._field_inputs["summary"]._value = "  A summary  "
         interaction = MagicMock()
         interaction.response.send_message = AsyncMock()
@@ -221,6 +254,38 @@ class FormSubmissionModalTests(unittest.IsolatedAsyncioTestCase):
         )
         interaction.response.send_message.assert_not_awaited()
 
+    async def test_modal_reports_invalid_regex_configuration_without_crashing(
+        self,
+    ) -> None:
+        from lifeguard.features.forms.schema import FormField
+        from lifeguard.features.forms.submission_modal import FormSubmissionModal
+
+        callback = AsyncMock()
+        modal = FormSubmissionModal(
+            title="Submit",
+            fields=[
+                FormField(
+                    id="clip_url",
+                    label="Clip URL",
+                    field_type="url",
+                    validation_regex="[",
+                ),
+            ],
+            on_submit_callback=callback,
+        )
+        modal._field_inputs["clip_url"]._value = "https://valid.example"
+        interaction = MagicMock()
+        interaction.response.send_message = AsyncMock()
+
+        await modal.on_submit(interaction)
+
+        callback.assert_not_awaited()
+        interaction.response.send_message.assert_awaited_once()
+        self.assertIn(
+            "invalid validation pattern",
+            interaction.response.send_message.await_args.args[0],
+        )
+
 
 class FormWizardViewTests(unittest.IsolatedAsyncioTestCase):
     async def test_boolean_select_uses_schema_labels(self) -> None:
@@ -248,14 +313,21 @@ class FormWizardViewTests(unittest.IsolatedAsyncioTestCase):
             on_publish_callback=AsyncMock(),
         )
 
-        select = next(item for item in view.children if isinstance(item, discord.ui.Select))
+        select = next(
+            item for item in view.children if isinstance(item, discord.ui.Select)
+        )
 
-        self.assertEqual([option.label for option in select.options], ["Pass", "Needs Work"])
+        self.assertEqual(
+            [option.label for option in select.options], ["Pass", "Needs Work"]
+        )
 
     async def test_note_modal_reopens_with_existing_values_and_preserves_untouched_fields(
         self,
     ) -> None:
-        from lifeguard.features.forms.models import FormCategoryResponse, FormResponseSession
+        from lifeguard.features.forms.models import (
+            FormCategoryResponse,
+            FormResponseSession,
+        )
         from lifeguard.features.forms.schema import FormCategory, NoteOptions
         from lifeguard.features.forms.wizard import FormWizardView
 
@@ -266,7 +338,9 @@ class FormWizardViewTests(unittest.IsolatedAsyncioTestCase):
                     name="Details",
                     response_kind="note",
                     required=True,
-                    options=NoteOptions(placeholder="Add context", required_reference=True),
+                    options=NoteOptions(
+                        placeholder="Add context", required_reference=True
+                    ),
                 )
             ],
             session=FormResponseSession(
@@ -307,7 +381,9 @@ class FormWizardViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.value, "Updated summary")
         self.assertEqual(response.reference, "Clip 00:12")
 
-    async def test_score_category_with_allow_note_supports_note_and_reference_details(self) -> None:
+    async def test_score_category_with_allow_note_supports_note_and_reference_details(
+        self,
+    ) -> None:
         from lifeguard.features.forms.models import FormResponseSession
         from lifeguard.features.forms.schema import FormCategory, ScoreOptions
         from lifeguard.features.forms.wizard import FormWizardView
@@ -341,7 +417,8 @@ class FormWizardViewTests(unittest.IsolatedAsyncioTestCase):
         details_button = next(
             item
             for item in view.children
-            if isinstance(item, discord.ui.Button) and item.custom_id == "wizard_open_modal"
+            if isinstance(item, discord.ui.Button)
+            and item.custom_id == "wizard_open_modal"
         )
         self.assertEqual(details_button.label, "Add Details")
 
@@ -394,7 +471,9 @@ class FormWizardViewTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(view.current_step, 0)
-        select = next(item for item in view.children if isinstance(item, discord.ui.Select))
+        select = next(
+            item for item in view.children if isinstance(item, discord.ui.Select)
+        )
         next_button = next(
             item
             for item in view.children
@@ -404,7 +483,9 @@ class FormWizardViewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(select.placeholder, "Select Overall")
         self.assertTrue(next_button.disabled)
 
-    async def test_wizard_uses_generic_default_copy_for_summary_and_timeout(self) -> None:
+    async def test_wizard_uses_generic_default_copy_for_summary_and_timeout(
+        self,
+    ) -> None:
         from lifeguard.features.forms.models import FormResponseSession
         from lifeguard.features.forms.schema import FormCategory, ScoreOptions
         from lifeguard.features.forms.wizard import FormWizardView
@@ -439,6 +520,71 @@ class FormWizardViewTests(unittest.IsolatedAsyncioTestCase):
         view.current_step = len(view.categories)
         view._sync_components()
         self.assertEqual(view.build_embed().title, "Form Summary")
+
+    async def test_interaction_check_restricts_wizard_to_responder(self) -> None:
+        from lifeguard.features.forms.models import FormResponseSession
+        from lifeguard.features.forms.wizard import FormWizardView
+
+        view = FormWizardView(
+            categories=[],
+            session=FormResponseSession(
+                id="session-1",
+                guild_id=1,
+                feature_key="shared_forms",
+                owner_id="submission-1",
+                responder_id=2,
+            ),
+            on_publish_callback=AsyncMock(),
+        )
+
+        interaction = MagicMock()
+        interaction.user.id = 3
+        interaction.response.send_message = AsyncMock()
+
+        allowed = await view.interaction_check(interaction)
+
+        self.assertFalse(allowed)
+        interaction.response.send_message.assert_awaited_once_with(
+            "You can't interact with this form.",
+            ephemeral=True,
+        )
+
+    async def test_select_submit_rejects_empty_single_value_payload(self) -> None:
+        from lifeguard.features.forms.models import FormResponseSession
+        from lifeguard.features.forms.schema import FormCategory, ScoreOptions
+        from lifeguard.features.forms.wizard import FormWizardView
+
+        view = FormWizardView(
+            categories=[
+                FormCategory(
+                    id="overall",
+                    name="Overall",
+                    response_kind="score",
+                    required=True,
+                    options=ScoreOptions(min_value=1, max_value=5),
+                )
+            ],
+            session=FormResponseSession(
+                id="session-1",
+                guild_id=1,
+                feature_key="shared_forms",
+                owner_id="submission-1",
+                responder_id=2,
+            ),
+            on_publish_callback=AsyncMock(),
+        )
+
+        interaction = MagicMock()
+        interaction.data = {"values": []}
+        interaction.response.send_message = AsyncMock()
+
+        await view._on_select_submit(interaction)
+
+        interaction.response.send_message.assert_awaited_once_with(
+            "❌ No value was submitted for this field.",
+            ephemeral=True,
+        )
+        self.assertIsNone(view._response_for("overall"))
 
     async def test_attach_message_enables_timeout_editing_live_message(self) -> None:
         from lifeguard.features.forms.models import FormResponseSession
@@ -494,6 +640,7 @@ class FormWizardViewTests(unittest.IsolatedAsyncioTestCase):
             session=session,
             on_publish_callback=AsyncMock(side_effect=RuntimeError("publish failed")),
         )
+        view.stop = MagicMock()
 
         interaction = MagicMock()
         interaction.response.defer = AsyncMock()
@@ -502,8 +649,35 @@ class FormWizardViewTests(unittest.IsolatedAsyncioTestCase):
             await view._on_publish(interaction)
 
         interaction.response.defer.assert_awaited_once_with()
+        view.stop.assert_not_called()
         self.assertEqual(session.status, "draft")
         self.assertIsNone(session.completed_at)
+
+    async def test_publish_success_stops_view_after_callback(self) -> None:
+        from lifeguard.features.forms.models import FormResponseSession
+        from lifeguard.features.forms.wizard import FormWizardView
+
+        callback = AsyncMock()
+        view = FormWizardView(
+            categories=[],
+            session=FormResponseSession(
+                id="session-1",
+                guild_id=1,
+                feature_key="shared_forms",
+                owner_id="submission-1",
+                responder_id=2,
+            ),
+            on_publish_callback=callback,
+        )
+        view.stop = MagicMock()
+
+        interaction = MagicMock()
+        interaction.response.defer = AsyncMock()
+
+        await view._on_publish(interaction)
+
+        callback.assert_awaited_once_with(view.session)
+        view.stop.assert_called_once_with()
 
 
 if __name__ == "__main__":

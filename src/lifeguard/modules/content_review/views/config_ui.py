@@ -428,7 +428,7 @@ class RemoveFieldByIdModal(discord.ui.Modal, title="Remove Submission Field"):
 
 
 class RemoveCategoryByIdModal(discord.ui.Modal, title="Remove Form Category"):
-    """Modal for removing a review category by ID."""
+    """Modal for removing a form category by ID."""
 
     category_id: discord.ui.TextInput = discord.ui.TextInput(
         label="Category ID",
@@ -525,7 +525,7 @@ class RemoveFieldView(discord.ui.View):
 
 
 class AddCategoryModal(discord.ui.Modal, title="Add Form Category"):
-    """Modal for adding a review category."""
+    """Modal for adding a form category."""
 
     category_id: discord.ui.TextInput = discord.ui.TextInput(
         label="Category ID",
@@ -576,7 +576,7 @@ class AddCategoryModal(discord.ui.Modal, title="Add Form Category"):
 
 
 class RemoveCategoryView(discord.ui.View):
-    """View for removing a review category."""
+    """View for removing a form category."""
 
     def __init__(self, cog: "ContentReviewCog", categories: list[FormCategory]) -> None:
         super().__init__(timeout=60)

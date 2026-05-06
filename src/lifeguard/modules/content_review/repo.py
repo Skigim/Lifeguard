@@ -183,6 +183,39 @@ def claim_submission_for_review(
     return _claim(transaction)
 
 
+def release_submission_claim(
+    firestore: FirestoreClient,
+    submission_id: str,
+) -> Submission:
+    """Release a previously claimed submission back to pending review state."""
+    transaction = firestore.transaction()
+    submission_ref = firestore.collection(SUBMISSIONS_COLLECTION).document(
+        submission_id
+    )
+
+    @firestore_sdk.transactional
+    def _release(tx):
+        doc = submission_ref.get(transaction=tx)
+        if not doc.exists:
+            raise SubmissionNotFoundError(submission_id)
+
+        submission = Submission.from_firestore(doc.to_dict())
+        if submission.status == "in_review":
+            tx.update(
+                submission_ref,
+                {
+                    "status": "pending",
+                    "reviewer_id": None,
+                },
+            )
+            submission.status = "pending"
+            submission.reviewer_id = None
+
+        return submission
+
+    return _release(transaction)
+
+
 # --- Review CRUD ---
 
 

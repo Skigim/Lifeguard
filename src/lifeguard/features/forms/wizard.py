@@ -159,9 +159,18 @@ def validate_category_response(
     if category.response_kind == "text":
         text_options = _text_options(category)
         value = cast(str, response.value).strip()
-        if text_options.validation_regex and not re.match(
-            text_options.validation_regex, value
-        ):
+        if not text_options.validation_regex:
+            return None
+
+        try:
+            matches_pattern = re.match(text_options.validation_regex, value)
+        except re.error:
+            return (
+                f"{category.name} has an invalid validation pattern. "
+                "Please contact an administrator."
+            )
+
+        if not matches_pattern:
             return f"{category.name} doesn't match the required format."
         return None
 
@@ -231,6 +240,15 @@ class FormWizardView(discord.ui.View):
         self._message: discord.Message | None = None
         self._sync_components()
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.session.responder_id:
+            await interaction.response.send_message(
+                "You can't interact with this form.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
     def attach_message(self, message: discord.Message) -> FormWizardView:
         self._message = message
         return self
@@ -288,9 +306,13 @@ class FormWizardView(discord.ui.View):
         assert category is not None
 
         embed = discord.Embed(
-            title=f"Step {self.current_step + 1}/{len(self.categories)}: {category.name}",
-            description=category.description or self.copy.category_description_fallback,
-            color=discord.Color.blue(),
+            title=(
+                f"Step {self.current_step + 1}/{len(self.categories)}: {category.name}"
+            ),
+            description=(
+                category.description or self.copy.category_description_fallback
+            ),
+            color=discord.Color.blurple(),
         )
 
         response = self._response_for(category.id)
@@ -599,6 +621,15 @@ class FormWizardView(discord.ui.View):
         data = cast(dict[str, object] | None, interaction.data)
         raw_values = data.get("values") if data is not None else []
         values = raw_values if isinstance(raw_values, list) else []
+        if (
+            category.response_kind in {"score", "boolean", "single_select"}
+            and not values
+        ):
+            await interaction.response.send_message(
+                "❌ No value was submitted for this field.",
+                ephemeral=True,
+            )
+            return
         existing = self._response_for(category.id)
         note = existing.note if existing is not None else ""
         reference = existing.reference if existing is not None else ""
@@ -689,8 +720,8 @@ class FormWizardView(discord.ui.View):
 
     async def _on_publish(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer()
-        self.stop()
         await self.on_publish_callback(self.session)
+        self.stop()
 
     async def _on_cancel(self, interaction: discord.Interaction) -> None:
         self.stop()

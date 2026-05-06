@@ -78,7 +78,16 @@ class FormSubmissionModal(discord.ui.Modal):
             field_values[field.id] = value
 
             if field.validation_regex and value:
-                if not re.match(field.validation_regex, value):
+                try:
+                    matches_pattern = re.match(field.validation_regex, value)
+                except re.error:
+                    validation_errors.append(
+                        f"**{field.label}** has an invalid validation pattern. "
+                        "Please contact an administrator."
+                    )
+                    continue
+
+                if not matches_pattern:
                     validation_errors.append(
                         f"**{field.label}** doesn't match the required format."
                     )

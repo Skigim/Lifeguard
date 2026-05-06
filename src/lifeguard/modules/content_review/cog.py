@@ -1738,13 +1738,14 @@ class ContentReviewCog(commands.Cog):
         )
 
         embed = wizard.build_embed()
-        await interaction.response.send_message(
-            embed=embed, view=wizard, ephemeral=True
-        )
         try:
+            await interaction.response.send_message(
+                embed=embed, view=wizard, ephemeral=True
+            )
             wizard.attach_message(await interaction.original_response())
-        except discord.HTTPException:
-            pass
+        except Exception:
+            repo.release_submission_claim(self.firestore, submission_id)
+            raise
 
         # Track the wizard
         key = f"{interaction.user.id}:{submission_id}"
