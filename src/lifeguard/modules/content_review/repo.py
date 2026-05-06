@@ -67,9 +67,11 @@ def get_config(firestore: FirestoreClient, guild_id: int) -> ContentReviewConfig
 
 def save_config(firestore: FirestoreClient, config: ContentReviewConfig) -> None:
     """Save or update a guild's content review configuration."""
+    payload = config.to_firestore()
+    payload["review_categories"] = firestore_sdk.DELETE_FIELD
     firestore.collection(CONFIGS_COLLECTION).document(
         _guild_doc_id(config.guild_id)
-    ).set(config.to_firestore(), merge=True)
+    ).set(payload, merge=True)
 
 
 def delete_config(firestore: FirestoreClient, guild_id: int) -> None:
@@ -179,6 +181,39 @@ def claim_submission_for_review(
         return submission
 
     return _claim(transaction)
+
+
+def release_submission_claim(
+    firestore: FirestoreClient,
+    submission_id: str,
+) -> Submission:
+    """Release a previously claimed submission back to pending review state."""
+    transaction = firestore.transaction()
+    submission_ref = firestore.collection(SUBMISSIONS_COLLECTION).document(
+        submission_id
+    )
+
+    @firestore_sdk.transactional
+    def _release(tx):
+        doc = submission_ref.get(transaction=tx)
+        if not doc.exists:
+            raise SubmissionNotFoundError(submission_id)
+
+        submission = Submission.from_firestore(doc.to_dict())
+        if submission.status == "in_review":
+            tx.update(
+                submission_ref,
+                {
+                    "status": "pending",
+                    "reviewer_id": None,
+                },
+            )
+            submission.status = "pending"
+            submission.reviewer_id = None
+
+        return submission
+
+    return _release(transaction)
 
 
 # --- Review CRUD ---

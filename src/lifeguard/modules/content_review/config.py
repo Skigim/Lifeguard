@@ -1,61 +1,136 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from typing import Literal
+from collections.abc import Iterable, MutableSequence
+from dataclasses import dataclass, field
+from typing import overload
 
-from lifeguard.utils import drop_none
+from lifeguard.features.forms.schema import FormCategory, FormField, ScoreOptions
+
+
+def _score_options_for_category(category: FormCategory) -> ScoreOptions:
+    if isinstance(category.options, ScoreOptions):
+        return category.options
+    raise TypeError(
+        "Content review categories must use score options during migration."
+    )
+
+
+SubmissionField = FormField
 
 
 @dataclass(frozen=True)
 class ReviewCategory:
-    """Defines a single category that reviewers will score."""
-
-    id: str  # Unique identifier (e.g., "communication")
-    name: str  # Display name (e.g., "Communication")
-    description: str = ""  # Tooltip/help text
-    min_score: int = 1  # Minimum rating value
-    max_score: int = 5  # Maximum rating value
-    allow_notes: bool = True  # Whether reviewers can add notes
-
-    def to_firestore(self) -> dict:
-        return drop_none(asdict(self))
-
-    @classmethod
-    def from_firestore(cls, data: dict) -> ReviewCategory:
-        return cls(
-            id=data["id"],
-            name=data["name"],
-            description=data.get("description", ""),
-            min_score=data.get("min_score", 1),
-            max_score=data.get("max_score", 5),
-            allow_notes=data.get("allow_notes", True),
-        )
-
-
-@dataclass(frozen=True)
-class SubmissionField:
-    """Defines a single input field in the submission modal."""
-
-    id: str  # Unique identifier
-    label: str  # Display label
-    field_type: Literal["short_text", "paragraph", "url"] = "short_text"
+    id: str
+    name: str
+    description: str = ""
+    min_score: int = 1
+    max_score: int = 5
+    allow_notes: bool = True
     required: bool = True
-    placeholder: str = ""
-    validation_regex: str = ""  # Optional regex for validation
 
-    def to_firestore(self) -> dict:
-        return drop_none(asdict(self))
+    @property
+    def response_kind(self) -> str:
+        return "score"
+
+    def to_form_category(self) -> FormCategory:
+        return FormCategory(
+            id=self.id,
+            name=self.name,
+            description=self.description,
+            response_kind="score",
+            required=self.required,
+            options=ScoreOptions(
+                min_value=self.min_score,
+                max_value=self.max_score,
+                allow_note=self.allow_notes,
+            ),
+        )
 
     @classmethod
-    def from_firestore(cls, data: dict) -> SubmissionField:
+    def from_form_category(cls, category: FormCategory) -> ReviewCategory:
+        options = _score_options_for_category(category)
         return cls(
-            id=data["id"],
-            label=data["label"],
-            field_type=data.get("field_type", "short_text"),
-            required=data.get("required", True),
-            placeholder=data.get("placeholder", ""),
-            validation_regex=data.get("validation_regex", ""),
+            id=category.id,
+            name=category.name,
+            description=category.description,
+            min_score=options.min_value,
+            max_score=options.max_value,
+            allow_notes=options.allow_note,
+            required=category.required,
         )
+
+
+def _as_form_category(category: ReviewCategory | FormCategory) -> FormCategory:
+    if isinstance(category, ReviewCategory):
+        return category.to_form_category()
+    _score_options_for_category(category)
+    return category
+
+
+class _ReviewCategoryList(MutableSequence[ReviewCategory]):
+    def __init__(self, categories: list[FormCategory]) -> None:
+        self._categories = categories
+
+    def __len__(self) -> int:
+        return len(self._categories)
+
+    @overload
+    def __getitem__(self, index: int) -> ReviewCategory: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> MutableSequence[ReviewCategory]: ...
+
+    def __getitem__(
+        self, index: int | slice
+    ) -> ReviewCategory | MutableSequence[ReviewCategory]:
+        if isinstance(index, slice):
+            return [
+                ReviewCategory.from_form_category(category)
+                for category in self._categories[index]
+            ]
+        return ReviewCategory.from_form_category(self._categories[index])
+
+    def __setitem__(
+        self,
+        index: int | slice,
+        value: ReviewCategory | FormCategory | Iterable[ReviewCategory | FormCategory],
+    ) -> None:
+        if isinstance(index, slice):
+            if not isinstance(value, Iterable):
+                raise TypeError("Slice assignment requires an iterable of categories.")
+            self._categories[index] = [
+                _as_form_category(category) for category in value
+            ]
+            return
+
+        if isinstance(value, Iterable) and not isinstance(
+            value, (ReviewCategory, FormCategory)
+        ):
+            raise TypeError(
+                "Single category assignment requires a ReviewCategory or FormCategory."
+            )
+        self._categories[index] = _as_form_category(value)
+
+    def __delitem__(self, index: int | slice) -> None:
+        del self._categories[index]
+
+    def insert(self, index: int, value: ReviewCategory | FormCategory) -> None:
+        self._categories.insert(index, _as_form_category(value))
+
+
+def _form_category_from_firestore(data: dict) -> FormCategory:
+    if "response_kind" in data or "options" in data:
+        return FormCategory.from_firestore(data)
+
+    return ReviewCategory(
+        id=data["id"],
+        name=data["name"],
+        description=data.get("description", ""),
+        min_score=data.get("min_score", 1),
+        max_score=data.get("max_score", 5),
+        allow_notes=data.get("allow_notes", True),
+        required=data.get("required", True),
+    ).to_form_category()
 
 
 @dataclass
@@ -70,8 +145,8 @@ class ContentReviewConfig:
     reviewer_role_ids: list[int] = field(
         default_factory=list
     )  # Roles allowed to review
-    submission_fields: list[SubmissionField] = field(default_factory=list)
-    review_categories: list[ReviewCategory] = field(default_factory=list)
+    submission_fields: list[FormField] = field(default_factory=list)
+    form_categories: list[FormCategory] = field(default_factory=list)
     dm_on_complete: bool = True  # DM submitter when review is done
     leaderboard_enabled: bool = True
     review_timeout_minutes: int = 15  # How long before draft reviews expire
@@ -92,6 +167,17 @@ class ContentReviewConfig:
     ticket_title: str = "Review Request from {user}"
     ticket_description: str = "A new submission is ready for review."
 
+    @property
+    def review_categories(self) -> MutableSequence[ReviewCategory]:
+        return _ReviewCategoryList(self.form_categories)
+
+    @review_categories.setter
+    def review_categories(
+        self,
+        categories: Iterable[ReviewCategory | FormCategory],
+    ) -> None:
+        self.form_categories = [_as_form_category(category) for category in categories]
+
     def to_firestore(self) -> dict:
         return {
             "guild_id": self.guild_id,
@@ -101,7 +187,7 @@ class ContentReviewConfig:
             "ticket_category_id": self.ticket_category_id,
             "reviewer_role_ids": self.reviewer_role_ids,
             "submission_fields": [f.to_firestore() for f in self.submission_fields],
-            "review_categories": [c.to_firestore() for c in self.review_categories],
+            "form_categories": [c.to_firestore() for c in self.form_categories],
             "dm_on_complete": self.dm_on_complete,
             "leaderboard_enabled": self.leaderboard_enabled,
             "review_timeout_minutes": self.review_timeout_minutes,
@@ -116,6 +202,10 @@ class ContentReviewConfig:
 
     @classmethod
     def from_firestore(cls, data: dict) -> ContentReviewConfig:
+        raw_form_categories = data.get("form_categories")
+        if raw_form_categories is None:
+            raw_form_categories = data.get("review_categories", [])
+
         return cls(
             guild_id=data["guild_id"],
             enabled=data.get("enabled", False),
@@ -124,12 +214,10 @@ class ContentReviewConfig:
             ticket_category_id=data.get("ticket_category_id"),
             reviewer_role_ids=data.get("reviewer_role_ids", []),
             submission_fields=[
-                SubmissionField.from_firestore(f)
-                for f in data.get("submission_fields", [])
+                FormField.from_firestore(f) for f in data.get("submission_fields", [])
             ],
-            review_categories=[
-                ReviewCategory.from_firestore(c)
-                for c in data.get("review_categories", [])
+            form_categories=[
+                _form_category_from_firestore(c) for c in raw_form_categories
             ],
             dm_on_complete=data.get("dm_on_complete", True),
             leaderboard_enabled=data.get("leaderboard_enabled", True),
@@ -156,14 +244,14 @@ class ContentReviewConfig:
             guild_id=guild_id,
             enabled=False,
             submission_fields=[
-                SubmissionField(
+                FormField(
                     id="game_link",
                     label="Game Link",
                     field_type="url",
                     required=True,
                     placeholder="https://example.com/replay/123",
                 ),
-                SubmissionField(
+                FormField(
                     id="context",
                     label="Context",
                     field_type="short_text",
@@ -171,14 +259,13 @@ class ContentReviewConfig:
                     placeholder="What would you like feedback on?",
                 ),
             ],
-            review_categories=[
-                ReviewCategory(
+            form_categories=[
+                FormCategory(
                     id="overall",
                     name="Overall",
                     description="How well did the player perform overall?",
-                    min_score=1,
-                    max_score=5,
-                    allow_notes=True,
+                    response_kind="score",
+                    options=ScoreOptions(min_value=1, max_value=5, allow_note=True),
                 ),
             ],
         )

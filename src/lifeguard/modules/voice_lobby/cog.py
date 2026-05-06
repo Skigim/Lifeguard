@@ -516,9 +516,15 @@ class VoiceLobbyCog(commands.Cog):
         guild: discord.Guild,
         owner: discord.Member,
         join_roles: list[discord.Role],
-    ) -> dict[discord.abc.Snowflake, discord.PermissionOverwrite]:
+    ) -> dict[
+        discord.Role | discord.Member | discord.Object,
+        discord.PermissionOverwrite,
+    ]:
         bot_member = guild.me
-        overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
+        overwrites: dict[
+            discord.Role | discord.Member | discord.Object,
+            discord.PermissionOverwrite,
+        ] = {
             owner: discord.PermissionOverwrite(
                 view_channel=True,
                 connect=True,

@@ -62,7 +62,7 @@ def _is_git_dirty() -> bool | None:
 
 
 def _iter_command_paths(
-    command: app_commands.Command | app_commands.Group,
+    command: app_commands.Command | app_commands.Group | app_commands.ContextMenu,
 ) -> list[str]:
     """Return executable command paths for a command or command group."""
     if isinstance(command, app_commands.Group):

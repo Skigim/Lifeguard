@@ -77,6 +77,17 @@ Bot instance carries shared resources as attributes:
 - `bot.lifeguard_http_session` - aiohttp session for API calls
 - `bot.lifeguard_firestore` - Firestore client
 
+## Shared Forms Boundary
+
+`lifeguard.features.forms` is the shared path for configurable forms and category-based
+response flows. It owns the reusable form schema, validation helpers, Discord wizard
+flow, and persisted form response sessions that multiple modules can use.
+
+Modules still own how those responses are interpreted and published. For example,
+`content_review` translates generic form responses into review-specific outputs and
+keeps its sticky-message, ticket, embed, and publishing behavior inside the module
+package instead of pushing that logic into the shared forms engine.
+
 ## Feature Registry and Shared Config Shell
 
 All feature management still flows through `/config`, `/enable-feature`, and

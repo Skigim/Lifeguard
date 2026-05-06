@@ -6,12 +6,22 @@ import asyncio
 from collections.abc import Awaitable, Callable
 import logging
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+from lifeguard.features.forms import repo as forms_repo
+from lifeguard.features.forms.models import FormCategoryResponse, FormResponseSession
+from lifeguard.features.forms.submission_modal import FormSubmissionModal
+from lifeguard.features.forms.schema import (
+    FormCategory,
+    FormFieldType,
+    InvalidFormSchemaError,
+    ScoreOptions,
+)
+from lifeguard.features.forms.wizard import FormWizardCopy, FormWizardView
 from lifeguard.modules.content_review import repo
 from lifeguard.modules.content_review.config import (
     ContentReviewConfig,
@@ -24,11 +34,11 @@ from lifeguard.modules.content_review.embeds import (
     build_review_embed,
     build_submission_embed,
 )
-from lifeguard.modules.content_review.models import ReviewSession, Submission
-from lifeguard.modules.content_review.views.review_wizard import (
-    DraftReview,
-    ReviewWizardView,
+from lifeguard.modules.content_review.forms_translation import (
+    build_review_session_draft,
+    session_to_review_payload,
 )
+from lifeguard.modules.content_review.models import ReviewSession, Submission
 from lifeguard.modules.content_review.views.config_ui import (
     BackToContentReviewView,
     ContentReviewConfigView,
@@ -41,7 +51,6 @@ from lifeguard.modules.content_review.views.config_ui import (
     SettingsView,
     StickyConfigMenuView,
 )
-from lifeguard.modules.content_review.views.submission_modal import SubmissionModal
 from lifeguard.modules.content_review.sticky_service import (
     post_sticky_message,
     sync_sticky_message,
@@ -60,8 +69,25 @@ _MSG_NOT_CONFIGURED = "Not configured."
 _STATUS_ENABLED = "✅ Enabled"
 _STATUS_DISABLED = "❌ Disabled"
 _FEATURE_CONTENT_REVIEW = "Content Review"
+_MSG_SUBMISSION_FORM_TOO_LARGE = (
+    "This submission form has too many fields to open in Discord. "
+    "Please contact an administrator."
+)
 
 _ALLOWED_FIELD_TYPES = frozenset({"short_text", "paragraph", "url"})
+
+_CONTENT_REVIEW_WIZARD_COPY = FormWizardCopy(
+    category_description_fallback="Rate this category.",
+    current_response_field_name="Current Score",
+    summary_title="📋 Review Summary",
+    next_button_label="Next",
+    final_step_next_label="Review Summary",
+    edit_button_label="Edit",
+    publish_button_label="Publish Review",
+    cancel_button_label="Cancel",
+    cancel_message="❌ Review cancelled.",
+    timeout_message="⏰ Review timed out.",
+)
 
 
 # --- Feature Check Decorators ---
@@ -75,7 +101,8 @@ def require_content_review():
     ) -> bool:  # NOSONAR - discord.py requires async
         if not interaction.guild:
             return False
-        cog = interaction.client.get_cog("ContentReviewCog")
+        bot = cast(commands.Bot, interaction.client)
+        cog = cast(ContentReviewCog | None, bot.get_cog("ContentReviewCog"))
         if not cog:
             return False
         config = repo.get_config(cog.firestore, interaction.guild.id)
@@ -84,6 +111,79 @@ def require_content_review():
         return True
 
     return app_commands.check(predicate)
+
+
+def _build_content_review_summary_embed(
+    categories: list[FormCategory],
+    session: FormResponseSession,
+) -> discord.Embed:
+    embed = discord.Embed(
+        title=_CONTENT_REVIEW_WIZARD_COPY.summary_title,
+        description="Review your scores before publishing.",
+        color=discord.Color.green(),
+    )
+    scores: list[int] = []
+    responses_by_category = {
+        response.category_id: response for response in session.responses
+    }
+
+    for category in categories:
+        response = responses_by_category.get(category.id)
+        score = response.value if response is not None else "N/A"
+        value = f"**Score: {score}**"
+        if response is not None and response.note.strip():
+            note_preview = response.note.strip()
+            if len(note_preview) > 80:
+                note_preview = f"{note_preview[:80]}..."
+            value = f"{value}\n📝 {note_preview}"
+        embed.add_field(name=category.name, value=value, inline=False)
+
+        if (
+            response is not None
+            and isinstance(response.value, int)
+            and not isinstance(
+                response.value,
+                bool,
+            )
+        ):
+            scores.append(response.value)
+
+    if scores:
+        average_score = sum(scores) / len(scores)
+        embed.add_field(
+            name="Average Score", value=f"**{average_score:.1f}**", inline=True
+        )
+
+    return embed
+
+
+def _content_review_select_placeholder(category: FormCategory) -> str:
+    if category.response_kind == "score":
+        options = cast(ScoreOptions, category.options)
+        return f"Select score ({options.min_value}-{options.max_value})"
+    return f"Select {category.name}"
+
+
+def _content_review_detail_button_label(
+    category: FormCategory,
+    response: FormCategoryResponse | None,
+) -> str:
+    if category.response_kind == "score":
+        if response is not None and (
+            response.note.strip() or response.reference.strip()
+        ):
+            return "✅ Note"
+        return "Add Note"
+    return "Edit Response" if response is not None else "Add Response"
+
+
+def _content_review_detail_modal_visibility(
+    category: FormCategory,
+    response: FormCategoryResponse | None,
+) -> bool:
+    if category.response_kind == "score":
+        return cast(ScoreOptions, category.options).allow_note and response is not None
+    return response is not None or category.response_kind in {"text", "note"}
 
 
 class StartReviewButton(discord.ui.View):
@@ -160,7 +260,7 @@ class ContentReviewCog(commands.Cog):
         self._config_home_handler: (
             Callable[[discord.Interaction], Awaitable[None]] | None
         ) = None
-        self._pending_reviews: dict[str, ReviewWizardView] = {}
+        self._pending_reviews: dict[str, FormWizardView] = {}
 
     @property
     def firestore(self) -> FirestoreClient:
@@ -769,7 +869,7 @@ class ContentReviewCog(commands.Cog):
         new_field = SubmissionField(
             id=field_id,
             label=label,
-            field_type=field_type,
+            field_type=cast(FormFieldType, field_type),
             required=required,
             placeholder=placeholder,
         )
@@ -839,7 +939,7 @@ class ContentReviewCog(commands.Cog):
             )
             return
 
-        view = RemoveCategoryView(self, config.review_categories)
+        view = RemoveCategoryView(self, list(config.form_categories))
         category_ids = ", ".join(c.id for c in config.review_categories)
         await interaction.response.edit_message(
             content=f"Enter the category ID to remove. Available IDs: {category_ids}",
@@ -1119,6 +1219,9 @@ class ContentReviewCog(commands.Cog):
 
         config = repo.get_config(self.firestore, interaction.guild.id)
         # Config is guaranteed to exist by the decorator
+        if config is None:
+            await interaction.response.send_message(_MSG_NOT_CONFIGURED, ephemeral=True)
+            return
 
         if not config.submission_fields:
             await interaction.response.send_message(
@@ -1127,12 +1230,36 @@ class ContentReviewCog(commands.Cog):
             )
             return
 
+        await self._send_submission_modal(interaction, config)
+
+    async def _send_submission_modal(
+        self,
+        interaction: discord.Interaction,
+        config: ContentReviewConfig,
+    ) -> None:
         async def on_submit(
             modal_interaction: discord.Interaction, field_values: dict[str, str]
         ) -> None:
             await self._handle_submission(modal_interaction, config, field_values)
 
-        modal = SubmissionModal(config, on_submit)
+        try:
+            modal = FormSubmissionModal(
+                config.modal_title,
+                config.submission_fields,
+                on_submit,
+            )
+        except InvalidFormSchemaError:
+            LOGGER.warning(
+                "Content review submission form exceeds Discord modal field limit: guild=%s fields=%s",
+                config.guild_id,
+                len(config.submission_fields),
+            )
+            await interaction.response.send_message(
+                _MSG_SUBMISSION_FORM_TOO_LARGE,
+                ephemeral=True,
+            )
+            return
+
         await interaction.response.send_modal(modal)
 
     async def _handle_submission(
@@ -1169,16 +1296,28 @@ class ContentReviewCog(commands.Cog):
         ticket_name = f"review-{interaction.user.name[:20]}-{short_id}"
 
         # Build permission overwrites for the ticket channel
-        overwrites: dict[discord.Role | discord.Member, discord.PermissionOverwrite] = {
+        requesting_member = cast(discord.Member, interaction.user)
+        bot_member = interaction.guild.me
+        if bot_member is None:
+            await interaction.followup.send(
+                "❌ I couldn't resolve my guild member permissions. Please try again.",
+                ephemeral=True,
+            )
+            return
+
+        overwrites: dict[
+            discord.Role | discord.Member | discord.Object,
+            discord.PermissionOverwrite,
+        ] = {
             interaction.guild.default_role: discord.PermissionOverwrite(
                 view_channel=False
             ),
-            interaction.user: discord.PermissionOverwrite(
+            requesting_member: discord.PermissionOverwrite(
                 view_channel=True,
                 send_messages=True,
                 read_message_history=True,
             ),
-            interaction.guild.me: discord.PermissionOverwrite(
+            bot_member: discord.PermissionOverwrite(
                 view_channel=True,
                 send_messages=True,
                 manage_channels=True,
@@ -1238,7 +1377,8 @@ class ContentReviewCog(commands.Cog):
         view = StartReviewButton(submission_id)
 
         # Add custom_id with submission ID for persistence
-        view.children[0].custom_id = f"content_review:start_review:{submission_id}"
+        start_button = cast(discord.ui.Button[StartReviewButton], view.children[0])
+        start_button.custom_id = f"content_review:start_review:{submission_id}"
 
         reviewer_mentions = (
             " ".join(role.mention for role in reviewer_roles) if reviewer_roles else ""
@@ -1379,6 +1519,9 @@ class ContentReviewCog(commands.Cog):
             return
 
         config = repo.get_config(self.firestore, interaction.guild.id)
+        if config is None:
+            await interaction.response.send_message(_MSG_NOT_CONFIGURED, ephemeral=True)
+            return
         if not config.leaderboard_enabled:
             await interaction.response.send_message(
                 "Leaderboard is not enabled in this server.", ephemeral=True
@@ -1404,6 +1547,9 @@ class ContentReviewCog(commands.Cog):
 
         target_user = user or interaction.user
         config = repo.get_config(self.firestore, interaction.guild.id)
+        if config is None:
+            await interaction.response.send_message(_MSG_NOT_CONFIGURED, ephemeral=True)
+            return
 
         profile = repo.get_profile(self.firestore, interaction.guild.id, target_user.id)
         if not profile:
@@ -1424,7 +1570,9 @@ class ContentReviewCog(commands.Cog):
         if interaction.type != discord.InteractionType.component:
             return
 
-        custom_id = interaction.data.get("custom_id", "")
+        data = cast(dict[str, object] | None, interaction.data)
+        custom_id_value = data.get("custom_id", "") if data is not None else ""
+        custom_id = custom_id_value if isinstance(custom_id_value, str) else ""
 
         # Handle submit button from sticky message
         if custom_id == "content_review:submit_content":
@@ -1486,13 +1634,7 @@ class ContentReviewCog(commands.Cog):
             )
             return
 
-        async def on_submit(
-            modal_interaction: discord.Interaction, field_values: dict[str, str]
-        ) -> None:
-            await self._handle_submission(modal_interaction, config, field_values)
-
-        modal = SubmissionModal(config, on_submit)
-        await interaction.response.send_modal(modal)
+        await self._send_submission_modal(interaction, config)
 
     async def _start_review(
         self, interaction: discord.Interaction, submission_id: str
@@ -1551,11 +1693,8 @@ class ContentReviewCog(commands.Cog):
             return
 
         # Create wizard
-        async def on_publish(draft: DraftReview) -> None:
-            await self._publish_review(interaction, config, submission, draft)
-
         try:
-            submission = repo.claim_submission_for_review(
+            claimed_submission = repo.claim_submission_for_review(
                 self.firestore,
                 submission_id,
                 interaction.user.id,
@@ -1571,18 +1710,42 @@ class ContentReviewCog(commands.Cog):
             )
             return
 
-        wizard = ReviewWizardView(
-            config=config,
-            submission=submission,
-            reviewer_id=interaction.user.id,
+        session = build_review_session_draft(
+            submission_id=claimed_submission.id,
+            guild_id=claimed_submission.guild_id,
+            responder_id=interaction.user.id,
+            categories=config.form_categories,
+        )
+
+        async def on_publish(published_session: FormResponseSession) -> None:
+            await self._publish_review(
+                interaction,
+                config,
+                claimed_submission,
+                published_session,
+            )
+
+        wizard = FormWizardView(
+            categories=config.form_categories,
+            session=session,
             on_publish_callback=on_publish,
+            copy=_CONTENT_REVIEW_WIZARD_COPY,
+            select_placeholder_builder=_content_review_select_placeholder,
+            detail_button_label_builder=_content_review_detail_button_label,
+            detail_modal_visibility_builder=_content_review_detail_modal_visibility,
+            summary_embed_builder=_build_content_review_summary_embed,
             timeout=config.review_timeout_minutes * 60,
         )
 
         embed = wizard.build_embed()
-        await interaction.response.send_message(
-            embed=embed, view=wizard, ephemeral=True
-        )
+        try:
+            await interaction.response.send_message(
+                embed=embed, view=wizard, ephemeral=True
+            )
+            wizard.attach_message(await interaction.original_response())
+        except Exception:
+            repo.release_submission_claim(self.firestore, submission_id)
+            raise
 
         # Track the wizard
         key = f"{interaction.user.id}:{submission_id}"
@@ -1593,24 +1756,25 @@ class ContentReviewCog(commands.Cog):
         interaction: discord.Interaction,
         config: ContentReviewConfig,
         submission: Submission,
-        draft: DraftReview,
+        session: FormResponseSession,
     ) -> None:
         """Publish a completed review."""
         if not interaction.guild:
             return
 
         now = datetime.now(timezone.utc)
+        payload = session_to_review_payload(session)
 
         # Create review record
         review = ReviewSession(
             id="",
             submission_id=submission.id,
             guild_id=submission.guild_id,
-            reviewer_id=draft.reviewer_id,
-            submitter_id=draft.submitter_id,
-            scores=draft.scores,
-            notes=draft.notes,
-            created_at=draft.created_at,
+            reviewer_id=session.responder_id,
+            submitter_id=submission.submitter_id,
+            scores=payload.scores,
+            notes=payload.notes,
+            created_at=session.created_at,
             completed_at=now,
         )
 
@@ -1618,7 +1782,7 @@ class ContentReviewCog(commands.Cog):
 
         # Update submission status
         submission.status = "completed"
-        submission.reviewer_id = draft.reviewer_id
+        submission.reviewer_id = session.responder_id
         repo.update_submission(self.firestore, submission)
 
         # Update user profiles
@@ -1629,15 +1793,22 @@ class ContentReviewCog(commands.Cog):
         repo.save_profile(self.firestore, submitter_profile)
 
         reviewer_profile = repo.get_or_create_profile(
-            self.firestore, submission.guild_id, draft.reviewer_id
+            self.firestore, submission.guild_id, session.responder_id
         )
         reviewer_profile.total_reviews_given += 1
         repo.save_profile(self.firestore, reviewer_profile)
 
+        self._save_completed_form_session(session, completed_at=now)
+
         # Get users for embed
-        reviewer = interaction.user
+        reviewer = cast(discord.Member | discord.User, interaction.user)
+        get_member = getattr(interaction.guild, "get_member", None)
+        submitter: discord.Member | discord.User | None = (
+            get_member(submission.submitter_id) if callable(get_member) else None
+        )
         try:
-            submitter = await self.bot.fetch_user(submission.submitter_id)
+            if submitter is None:
+                submitter = await self.bot.fetch_user(submission.submitter_id)
         except discord.NotFound:
             LOGGER.warning(
                 "Submitter user %s not found; skipping DM",
@@ -1650,6 +1821,20 @@ class ContentReviewCog(commands.Cog):
                 submission.submitter_id,
             )
             submitter = None
+
+        if submitter is None:
+            LOGGER.warning(
+                "Submitter user %s unavailable; skipping public review embed",
+                submission.submitter_id,
+            )
+            await interaction.edit_original_response(
+                content="✅ Review published successfully!",
+                embed=None,
+                view=None,
+            )
+            key = f"{interaction.user.id}:{submission.id}"
+            self._pending_reviews.pop(key, None)
+            return
 
         # Build and send public review embed
         review_embed = build_review_embed(review, config, reviewer, submitter)
@@ -1692,8 +1877,18 @@ class ContentReviewCog(commands.Cog):
         LOGGER.info(
             "Review published: submission=%s reviewer=%s",
             submission.id,
-            draft.reviewer_id,
+            session.responder_id,
         )
+
+    def _save_completed_form_session(
+        self,
+        session: FormResponseSession,
+        *,
+        completed_at: datetime,
+    ) -> None:
+        session.status = "completed"
+        session.completed_at = completed_at
+        forms_repo.save_session(self.firestore, session)
 
     # --- Error Handler ---
 

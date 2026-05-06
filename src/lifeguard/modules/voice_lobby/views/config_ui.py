@@ -15,7 +15,7 @@ class RenameLobbyModal(discord.ui.Modal, title="Rename Lobby"):
         super().__init__()
         self.cog = cog
         self.voice_channel_id = voice_channel_id
-        self.new_name = discord.ui.TextInput(
+        self.new_name: discord.ui.TextInput = discord.ui.TextInput(
             label="Channel Name",
             max_length=100,
             placeholder="My Team Lobby",
@@ -35,7 +35,7 @@ class UserLimitModal(discord.ui.Modal, title="Set User Limit"):
         super().__init__()
         self.cog = cog
         self.voice_channel_id = voice_channel_id
-        self.user_limit = discord.ui.TextInput(
+        self.user_limit: discord.ui.TextInput = discord.ui.TextInput(
             label="User Limit (0-99)",
             max_length=2,
             placeholder="0",
@@ -306,13 +306,13 @@ class AssignVoiceLobbyCategoryView(discord.ui.View):
 
 
 class VoiceLobbyDefaultsModal(discord.ui.Modal, title="Voice Lobby Defaults"):
-    name_template = discord.ui.TextInput(
+    name_template: discord.ui.TextInput = discord.ui.TextInput(
         label="Name Template",
         placeholder="Lobby - {owner}",
         required=False,
         max_length=100,
     )
-    default_user_limit = discord.ui.TextInput(
+    default_user_limit: discord.ui.TextInput = discord.ui.TextInput(
         label="Default User Limit (0-99)",
         placeholder="0",
         default="0",
