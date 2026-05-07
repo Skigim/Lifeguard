@@ -17,17 +17,14 @@ from lifeguard.features.forms.models import FormCategoryResponse, FormResponseSe
 from lifeguard.features.forms.submission_modal import FormSubmissionModal
 from lifeguard.features.forms.schema import (
     FormCategory,
+    FormField,
     FormFieldType,
     InvalidFormSchemaError,
     ScoreOptions,
 )
 from lifeguard.features.forms.wizard import FormWizardCopy, FormWizardView
 from lifeguard.modules.content_review import repo
-from lifeguard.modules.content_review.config import (
-    ContentReviewConfig,
-    ReviewCategory,
-    SubmissionField,
-)
+from lifeguard.modules.content_review.config import ContentReviewConfig
 from lifeguard.modules.content_review.embeds import (
     build_leaderboard_embed,
     build_profile_embed,
@@ -524,10 +521,12 @@ class ContentReviewCog(commands.Cog):
             fields_str = "None configured"
         embed.add_field(name="Submission Fields", value=fields_str, inline=False)
 
-        if config.review_categories:
+        if config.form_categories:
             cats_str = "\n".join(
-                f"• **{c.name}** (`{c.id}`) - {c.min_score}-{c.max_score} scale"
-                for c in config.review_categories
+                f"• **{category.name}** (`{category.id}`) - "
+                f"{cast(ScoreOptions, category.options).min_value}-"
+                f"{cast(ScoreOptions, category.options).max_value} scale"
+                for category in config.form_categories
             )
         else:
             cats_str = "None configured"
@@ -866,7 +865,7 @@ class ContentReviewCog(commands.Cog):
             )
             return
 
-        new_field = SubmissionField(
+        new_field = FormField(
             id=field_id,
             label=label,
             field_type=cast(FormFieldType, field_type),
@@ -933,14 +932,14 @@ class ContentReviewCog(commands.Cog):
             return
 
         config = repo.get_config(self.firestore, interaction.guild.id)
-        if not config or not config.review_categories:
+        if not config or not config.form_categories:
             await interaction.response.edit_message(
                 content="No review categories configured.", embed=None, view=None
             )
             return
 
         view = RemoveCategoryView(self, list(config.form_categories))
-        category_ids = ", ".join(c.id for c in config.review_categories)
+        category_ids = ", ".join(category.id for category in config.form_categories)
         await interaction.response.edit_message(
             content=f"Enter the category ID to remove. Available IDs: {category_ids}",
             embed=None,
@@ -962,7 +961,7 @@ class ContentReviewCog(commands.Cog):
 
         config = repo.get_or_create_config(self.firestore, interaction.guild.id)
 
-        if any(c.id == category_id for c in config.review_categories):
+        if any(category.id == category_id for category in config.form_categories):
             await interaction.response.send_message(
                 f"A category with ID `{category_id}` already exists.", ephemeral=True
             )
@@ -975,14 +974,18 @@ class ContentReviewCog(commands.Cog):
             )
             return
 
-        new_cat = ReviewCategory(
+        new_cat = FormCategory(
             id=category_id,
             name=name,
             description=description,
-            min_score=min_score,
-            max_score=max_score,
+            response_kind="score",
+            options=ScoreOptions(
+                min_value=min_score,
+                max_value=max_score,
+                allow_note=True,
+            ),
         )
-        config.review_categories.append(new_cat)
+        config.form_categories.append(new_cat)
         repo.save_config(self.firestore, config)
 
         await interaction.response.send_message(
@@ -1006,12 +1009,14 @@ class ContentReviewCog(commands.Cog):
             await self._respond(interaction, _MSG_NOT_CONFIGURED, use_send=use_send)
             return
 
-        original_count = len(config.review_categories)
-        config.review_categories = [
-            c for c in config.review_categories if c.id != category_id
+        original_count = len(config.form_categories)
+        config.form_categories = [
+            category
+            for category in config.form_categories
+            if category.id != category_id
         ]
 
-        if len(config.review_categories) == original_count:
+        if len(config.form_categories) == original_count:
             await self._respond(
                 interaction,
                 f"No category with ID `{category_id}` found.",

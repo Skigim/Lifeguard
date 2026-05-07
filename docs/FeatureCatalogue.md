@@ -2,12 +2,17 @@
 
 This document outlines the current capabilities and modules available in the Lifeguard Discord Bot. Lifeguard operates on a modular architecture, meaning server administrators can enable or disable specific features as needed.
 
+Current manifest-backed modules on main:
+- Content Review
+- Time Impersonator
+- Voice Lobby
+
 ## ⚙️ Core functionality
 These commands and tools are built into the backbone of the bot for administration and health monitoring.
 * **/ping:** Basic health check to ensure the bot is online and responding.
-* **/config setup:** Interactive administrative UI for setting up features and enabling/disabling individual modules per-server.
-* **/config status:** Provides an overview of the server's current Configuration, including which modules are enabled and their status.
-* **/config disable:** Allows administrators to quickly disable specific modules on the server.
+* **/config:** Interactive administrative UI for general bot settings and per-feature configuration.
+* **/enable-feature:** Enables a discovered feature module for the current server.
+* **/disable-feature:** Disables an enabled feature module for the current server.
 
 ---
 
@@ -22,7 +27,8 @@ A module designed to eliminate international scheduling confusion.
 A dynamic channel management system to keep server channel lists clean and clutter-free.
 * **Auto-Creation:** Users join a designated "Lobby" channel, and the bot immediately creates a temporary, private voice channel and text channel specifically for them.
 * **Auto-Move:** The user is seamlessly moved into their new temporary channel.
-* **Auto-Cleanup:** Once the channel is empty, the bot automatically deletes it to avoid clutter. 
+* **Auto-Cleanup:** Once the channel is empty, the bot automatically deletes it to avoid clutter.
+* **Configuration:** Administrators enable and manage the module through the shared feature configuration shell.
 
 ---
 

@@ -1,5 +1,12 @@
 # Planned Features
 
+## Albion Integration
+- **Albion Market and Build Lookup**: Planned module for Albion Online market queries and saved build lookups.
+  - *Key Features*:
+    - Search market prices for specific items.
+    - Fetch saved build details by ID.
+  - *Status*: Planned only. This module does not currently ship on main.
+
 ## Application Ticket Management
 - **Generalized Ticket Module**: Expand and rescope the current `content_review` cog to act as a generalized ticketing solution.
   - *Key Features*:

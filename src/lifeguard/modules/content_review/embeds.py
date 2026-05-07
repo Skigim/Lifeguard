@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import discord
+from lifeguard.features.forms.schema import ScoreOptions
 
 if TYPE_CHECKING:
     from lifeguard.modules.content_review.config import ContentReviewConfig
@@ -90,15 +91,16 @@ def build_review_embed(
     )
 
     # Add scores for each category
-    for category in config.review_categories:
+    for category in config.form_categories:
+        score_options = cast(ScoreOptions, category.options)
         score = review.scores.get(category.id)
         note = review.notes.get(category.id)
 
         if score is not None:
             # Visual score bar
             filled = "█" * score
-            empty = "░" * (category.max_score - score)
-            score_bar = f"`{filled}{empty}` **{score}/{category.max_score}**"
+            empty = "░" * (score_options.max_value - score)
+            score_bar = f"`{filled}{empty}` **{score}/{score_options.max_value}**"
 
             value = score_bar
             if note:
@@ -178,7 +180,7 @@ def build_profile_embed(
     # Category breakdown if available
     if profile.category_averages:
         breakdown_lines = []
-        for category in config.review_categories:
+        for category in config.form_categories:
             avg = profile.category_averages.get(category.id)
             if avg is not None:
                 breakdown_lines.append(f"**{category.name}:** {avg:.1f}")

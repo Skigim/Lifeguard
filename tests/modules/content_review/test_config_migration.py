@@ -2,6 +2,29 @@ import unittest
 
 
 class ContentReviewConfigMigrationTests(unittest.TestCase):
+    def test_package_root_exports_forms_surface_without_legacy_aliases(self) -> None:
+        import lifeguard.modules.content_review as content_review
+
+        self.assertIn("ContentReviewConfig", content_review.__all__)
+        self.assertIn("FormCategory", content_review.__all__)
+        self.assertIn("FormField", content_review.__all__)
+        self.assertNotIn("ReviewCategory", content_review.__all__)
+        self.assertNotIn("SubmissionField", content_review.__all__)
+
+    def test_default_config_uses_forms_native_runtime_lists(self) -> None:
+        from lifeguard.features.forms.schema import FormCategory, FormField, ScoreOptions
+        from lifeguard.modules.content_review.config import ContentReviewConfig
+
+        config = ContentReviewConfig.default(123)
+
+        self.assertIsInstance(config.submission_fields[0], FormField)
+        self.assertIsInstance(config.form_categories[0], FormCategory)
+        self.assertEqual(config.form_categories[0].response_kind, "score")
+        self.assertEqual(
+            config.form_categories[0].options,
+            ScoreOptions(min_value=1, max_value=5, allow_note=True),
+        )
+
     def test_save_config_clears_legacy_review_categories_on_merge(self) -> None:
         from google.cloud import firestore as firestore_sdk
 

@@ -33,9 +33,10 @@ Thank you for your interest in contributing to Lifeguard! This document provides
 src/lifeguard/
 ├── cogs/           # Core Discord cogs
 ├── db/             # Database models and repositories
-└── modules/        # Feature modules (albion, content_review, etc.)
+└── modules/        # Feature modules (content_review, time_impersonator, voice_lobby)
     └── <module>/
         ├── __init__.py
+            ├── manifest.py # FEATURE_MANIFEST for auto-discovery
         ├── cog.py      # Discord commands
         ├── models.py   # Data models
         └── repo.py     # Firestore persistence
@@ -46,7 +47,7 @@ src/lifeguard/
 1. Create a new folder under `src/lifeguard/modules/`
 2. Follow the existing pattern with `cog.py`, `models.py`, `repo.py`
 3. Export public symbols in `__init__.py`
-4. Register the cog in `bot.py`
+4. Add `manifest.py` with a `FEATURE_MANIFEST` so the registry can discover and load the module
 
 ## Pull Request Process
 

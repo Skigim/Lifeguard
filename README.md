@@ -38,6 +38,8 @@ python -m lifeguard
 
 ## Commands
 
+Current main ships these manifest-backed feature modules: Content Review, Time Impersonator, and Voice Lobby.
+
 ### Core Commands
 
 | Command | Description |
@@ -45,33 +47,38 @@ python -m lifeguard
 | `/ping` | Health check |
 | `/purge` | Delete all messages in this channel (Admin) |
 
-### Albion Commands
+### Shared Feature Commands
 
 | Command | Description |
 |---------|-------------|
-| `/albion-price <item>` | Search item prices on the Albion market |
-| `/build <id>` | Fetch a saved build by ID |
+| `/enable-feature` | Enable a bot feature via interactive menu (Admin) |
+| `/disable-feature` | Disable a bot feature via interactive menu (Admin) |
+| `/config` | Configure bot settings via interactive menu (Admin) |
+
+### Time Impersonator Commands
+
+| Command | Description |
+|---------|-------------|
+| `/t [message]` | Replace natural-language times with Discord timestamps |
+| `/tz set` | Save your default timezone for timestamp conversion |
 
 ### Content Review Commands
 
 | Command | Description |
 |---------|-------------|
-| `/enable-feature` | Enable a bot feature via interactive menu (Admin) |
-| `/config` | Configure bot settings via interactive menu (Admin) |
 | `/submit` | Submit content for review |
 | `/close-ticket` | Close the current review ticket |
 | `/leaderboard` | View reviewer rankings |
 | `/review-profile [user]` | View your or another user's review stats |
 
+### Voice Lobby
+
+Voice Lobby is configured through the shared feature shell. On main, it manages temporary channel lifecycle rather than exposing user-facing slash commands.
+
 ## Notes
 
 - Prefix commands require the **Message Content Intent** enabled in the Discord Developer Portal.
 - If you set `GUILD_ID`, slash commands will sync to that guild only (fast). Without it, sync is global (can take a while).
-
-## Albion APIs (West)
-
-- Market data (default): `https://west.albion-online-data.com`
-- Game Info (kills/battles): `https://gameinfo.albiononline.com/api/gameinfo`
 
 ## Backend
 
