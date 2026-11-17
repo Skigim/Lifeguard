@@ -112,3 +112,18 @@ async def test_disabled_error_becomes_friendly_message():
     error = discord.app_commands.CommandInvokeError(command, ProcessDisabled("x"))  # type: ignore[arg-type]
     await on_app_command_error(interaction, error)  # type: ignore[arg-type]
     assert interaction.response.sent == (DISABLED_MESSAGE, True)
+
+
+async def test_help_autocompletes_features_and_links_the_doc(bot):
+    command = bot.tree.get_command("help")
+    assert command.parameters[0].name == "feature"
+    assert command.parameters[0].autocomplete
+    interaction = FakeInteraction()
+    choices = await command.binding.help_features(interaction, "GIT")
+    assert [choice.value for choice in choices] == ["github"]
+    await command.callback(command.binding, interaction, choices[0].value)
+    message, ephemeral = interaction.response.sent
+    assert "https://github.com/Skigim/Lifeguard/blob/main/docs/features/github.md" in message
+    assert ephemeral
+    await command.callback(command.binding, interaction, "unknown")
+    assert interaction.response.sent[0].startswith("Unknown feature.")

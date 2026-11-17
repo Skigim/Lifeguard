@@ -30,5 +30,7 @@ docker run --env-file .env.test -p 8080:8080 -v lifeguard-data:/data lifeguard
 
 ## Features
 
+In Discord, run `/help` and select a feature to open its documentation.
+
 - [GitHub bridge](docs/features/github.md) — mirror GitHub issues and pull requests into Discord forums.
 - [Greeter](docs/features/greeter.md) — enable the `/greet` command.
