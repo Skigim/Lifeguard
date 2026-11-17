@@ -1,4 +1,4 @@
-from lifeguard.core.db import SqliteEnablementStore
+from lifeguard.core.db import MIGRATIONS, SqliteEnablementStore
 
 
 def test_enablement_survives_restart(tmp_path):
@@ -13,5 +13,5 @@ def test_enablement_survives_restart(tmp_path):
     store.remove("github", 1)
     assert store.guilds_for("github") == set()
     assert store.guilds_for("greeter") == {2}
-    assert store.db.execute("SELECT version FROM schema_version").fetchone()[0] == 1
+    assert store.db.execute("SELECT version FROM schema_version").fetchone()[0] == len(MIGRATIONS)
     store.close()

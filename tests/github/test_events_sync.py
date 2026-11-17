@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from lifeguard.features.github.events import Events
+from lifeguard.features.github.render import post_embed
 from lifeguard.features.github.sync import DiscordSink
 
 
@@ -84,9 +85,13 @@ class Thread:
     def get_partial_message(self, message_id):
         return self.message
 
+    async def fetch_message(self, message_id):
+        return self.message
 
-async def seeded_sink(store, state="Closed"):
+
+async def seeded_sink(store, item, state="Closed"):
     thread = Thread()
+    thread.message.embeds = [post_embed(item)]
     bot = SimpleNamespace(get_channel=lambda id: thread)
     sink = DiscordSink(bot, store)
     await store.put(
@@ -103,34 +108,42 @@ async def seeded_sink(store, state="Closed"):
 
 
 async def test_comment_echo_edit_delete_and_archiving(store, payload, link):
-    sink, thread = await seeded_sink(store)
+    sink, thread = await seeded_sink(store, payload["issue"])
     args = (link, payload["issue"], payload["comment"], "issue_comment")
     await sink.comment(*args, "created")
     assert thread.edits[0] == {"archived": False}
     assert thread.archived and not thread.locked
     await sink.comment(*args, "created")
-    assert thread.send.await_count == 1
+    assert len(await store.all("SELECT * FROM comments")) == 1
+    embeds = thread.message.edit.call_args.kwargs["embeds"]
+    assert len(embeds) == 2
+    assert embeds[1].description.count("A comment") == 1
+    payload["comment"]["body"] = "Edited remotely"
     await sink.comment(*args, "edited")
-    thread.message.edit.assert_awaited_once()
+    assert "Edited remotely" in thread.message.edit.call_args.kwargs["embeds"][1].description
     await sink.comment(*args, "deleted")
     await sink.comment(*args, "deleted")
-    thread.message.delete.assert_awaited_once()
+    assert len(thread.message.edit.call_args.kwargs["embeds"]) == 1
+    thread.message.delete.assert_not_awaited()
+    thread.send.assert_not_awaited()
     assert await store.comment(1, link["repo"], "issue_comment", 99) is None
 
 
 async def test_deleted_issue_keeps_history_and_locks(store, payload, link):
-    sink, thread = await seeded_sink(store)
+    sink, thread = await seeded_sink(store, payload["issue"])
     await sink.notice(link, payload["issue"], "Deleted on GitHub.", locked=True, archived=True)
     assert thread.archived and thread.locked
     assert (await store.post(1, link["repo"], 42))["state"] == "Deleted"
+    assert "Deleted on GitHub" in thread.message.edit.call_args.kwargs["embeds"][1].description
+    thread.send.assert_not_awaited()
     thread.message.delete.assert_not_awaited()
 
 
 async def test_bot_comment_collapses_and_other_guild_gets_echo(store, payload, link):
-    sink, thread = await seeded_sink(store, "Open")
+    sink, thread = await seeded_sink(store, payload["issue"], "Open")
     payload["comment"]["user"] = {"id": 8, "login": "ci[bot]", "type": "Bot"}
     await sink.comment(link, payload["issue"], payload["comment"], "issue_comment", "created")
-    assert "🤖" in thread.send.call_args.kwargs["embed"].description
+    assert "🤖" in thread.message.edit.call_args.kwargs["embeds"][1].description
     assert (await store.comment(1, link["repo"], "issue_comment", 99))["collapsed"]
     await store.put(
         "posts",
@@ -145,4 +158,5 @@ async def test_bot_comment_collapses_and_other_guild_gets_echo(store, payload, l
     await sink.comment(
         dict(link, guild_id=2), payload["issue"], payload["comment"], "issue_comment", "created"
     )
-    assert thread.send.await_count == 2
+    assert await store.comment(2, link["repo"], "issue_comment", 99)
+    thread.send.assert_not_awaited()

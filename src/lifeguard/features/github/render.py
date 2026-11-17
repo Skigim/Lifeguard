@@ -79,6 +79,40 @@ def post_embed(item):
     return embed
 
 
+def activity_text(comment, kind, collapsed):
+    login = discord.utils.escape_markdown((comment.get("user") or {}).get("login", "GitHub"))
+    if collapsed:
+        return f"🤖 {login} · {summary(comment.get('body'))}"
+    text = " ".join(markdown(comment.get("body")).split())
+    if kind == "review":
+        login += f" · Review ({comment.get('state', 'submitted')})"
+    elif kind == "review_comment":
+        login += f" · {comment.get('path', '?')}:{comment.get('line') or '?'}"
+    return f"**{login}** · {discord.utils.escape_markdown(truncate(text, 140))}"
+
+
+def starter_embeds(base, rows, notice):
+    title = "Recent GitHub activity"
+    lines = [truncate(notice, 300)] if notice else []
+    for row in rows:
+        url = row["activity_url"]
+        link = f" · [View]({url})" if url and len(url) <= 300 else ""
+        lines.append(f"{truncate(row['activity_text'], 250)}{link}")
+    if not lines:
+        return [base]
+    budget = min(4096, 6000 - len(base) - len(title))
+    if budget <= 0:
+        return [base]
+    shown = []
+    for line in lines:
+        if sum(len(entry) + 1 for entry in shown) + len(line) > budget:
+            break
+        shown.append(line)
+    if shown:
+        return [base, discord.Embed(title=title, description="\n".join(shown))]
+    return [base]
+
+
 def comment_embed(comment, collapsed=False):
     user = comment.get("user") or {}
     login = user.get("login", "GitHub")
