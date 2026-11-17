@@ -7,7 +7,7 @@ Discord bot (rewrite). Python 3.11+, `discord.py`.
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\pip install -e ".[dev]"
-Copy-Item .env.example .env.test   # then fill in DISCORD_TOKEN (use a TEST bot)
+notepad .env.test   # add DISCORD_TOKEN= followed by your test bot token, then save
 .\.venv\Scripts\python -m lifeguard
 ```
 
@@ -43,7 +43,7 @@ Create a GitHub App and install it on the repositories you want to bridge. Confi
 
 Set `DATABASE_PATH`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH` (or the PEM in
 `GITHUB_APP_PRIVATE_KEY`), `GITHUB_WEBHOOK_SECRET`, `GITHUB_CLIENT_ID`,
-`GITHUB_CLIENT_SECRET`, `PUBLIC_URL`, and `TOKEN_ENCRYPTION_KEY`. See `.env.example`.
+`GITHUB_CLIENT_SECRET`, `PUBLIC_URL`, and `TOKEN_ENCRYPTION_KEY` in your environment file.
 Without `DATABASE_PATH`, other features use in-memory enablement. GitHub requires the database.
 The SQLite file holds enablement, mappings, encrypted user tokens, and delivery history;
 keep the Docker `/data` volume across deployments. Run one bot process per database/listener.
