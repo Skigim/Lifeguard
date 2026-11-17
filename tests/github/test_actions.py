@@ -60,7 +60,7 @@ async def actions(store):
 
 async def test_modal_defers_then_writes_and_mirrors(actions):
     bot, proc, interaction = actions
-    modal = CommentModal(bot, message_id=30, body="changed")
+    modal = CommentModal(bot, message_id="issue_comment:99", body="changed")
     await modal.on_submit(interaction)
     interaction.response.defer.assert_awaited_once_with(ephemeral=True)
     interaction.edit_original_response.assert_awaited_once_with(content="Saved on GitHub.")

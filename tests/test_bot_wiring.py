@@ -37,6 +37,8 @@ async def test_commands_registered(bot):
         "github link",
         "github unlink",
         "github whoami",
+        "github edit-comment",
+        "github delete-comment",
         "comment",
         "close",
         "reopen",

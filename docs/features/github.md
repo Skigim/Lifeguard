@@ -3,6 +3,10 @@
 Lifeguard mirrors GitHub issues and pull requests into a Discord forum. Each issue
 or PR gets its own post. GitHub changes update the existing post or comment, and
 linked Discord users can take explicit actions on GitHub from inside the thread.
+The starter post shows **Recent GitHub activity** with up to five comments or
+reviews received in the consolidated layout, plus the latest status notice.
+Use each entry's **View** link to read it on GitHub. Discord discussion continues
+below the starter post. Older individual mirrors stay where they were posted.
 
 ## Getting started in Discord
 
@@ -69,15 +73,17 @@ Manage Channels to create them. Alternatively create those five tags yourself.
 - `/bridge bot-login add login collapse|human` overrides bot detection; `remove` clears it.
 - `/github link`, `/github whoami`, `/github unlink` manage the user's authorization.
 - `/comment`, `/close [reason]`, `/reopen` work inside linked threads under that user's identity.
-- Right-click a mirrored human comment → Apps → **Edit on GitHub** or **Delete on GitHub**.
-  Only its linked author can act; delete requires confirmation. Edit loads the current
+- Use `/github edit-comment` or `/github delete-comment` and select your comment.
+  For older individually mirrored messages, the **Edit on GitHub** and **Delete on GitHub**
+  context menus are still available.
+  Only the linked GitHub author can act. Deleting requires confirmation. Edit loads the current
   GitHub body, then offers an editor button. Bodies over Discord's 4,000-character modal
   limit must be edited on GitHub. Submitted reviews can be edited, but GitHub only permits
   deletion of pending reviews; use GitHub's review controls for submitted reviews.
 
 Ordinary Discord chat never writes to GitHub. No message-content intent is required.
 Closing archives a thread without locking it. Deleting an issue keeps the discussion,
-adds a notice, and locks/archives the thread. Bot *comments* collapse to one-line embeds;
+adds a notice to the starter post, and locks/archives the thread. Bot *comments* use one-line summaries;
 check runs and commit statuses are outside this bridge's scope.
 
 ### Delivery and recovery

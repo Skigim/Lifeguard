@@ -77,11 +77,19 @@ async def thread_post(proc, interaction):
 
 
 async def author_comment(proc, interaction, message_id):
-    await thread_post(proc, interaction)
-    row = await proc.store.one(
-        "SELECT * FROM comments WHERE guild_id=? AND thread_id=? AND message_id=?",
-        (interaction.guild_id, interaction.channel_id, message_id),
-    )
+    post = await thread_post(proc, interaction)
+    if isinstance(message_id, str):
+        kind, _, comment_id = message_id.partition(":")
+        if not re.fullmatch(r"[0-9]{1,18}", comment_id):
+            raise BridgeError("Choose a comment from the suggestions.")
+        row = await proc.store.comment(post["guild_id"], post["repo"], kind, int(comment_id))
+        if row and row["thread_id"] != post["thread_id"]:
+            row = None
+    else:
+        row = await proc.store.one(
+            "SELECT * FROM comments WHERE guild_id=? AND thread_id=? AND message_id=?",
+            (interaction.guild_id, interaction.channel_id, message_id),
+        )
     if not row or row["collapsed"]:
         raise BridgeError("This action is only available for mirrored human comments.")
     token = await proc.gh.user_token(interaction.user.id)
@@ -91,6 +99,34 @@ async def author_comment(proc, interaction, message_id):
     if not user or user["gh_id"] != row["gh_author_id"]:
         raise BridgeError("Only the linked GitHub author can edit or delete this comment.")
     return row, token
+
+
+async def open_comment_editor(bot, interaction, comment_ref):
+    proc = require(bot, interaction)
+    await interaction.response.defer(ephemeral=True)
+    row, token = await author_comment(proc, interaction, comment_ref)
+    comment = await proc.gh.get_comment(row, token)
+    body = comment.get("body") or ""
+    if len(body) > 4000:
+        raise BridgeError("This comment exceeds the Discord editor limit. Edit it on GitHub.")
+    await reply(
+        interaction,
+        "Edit your GitHub comment:",
+        view=EditView(bot, interaction.user.id, comment_ref, body),
+    )
+
+
+async def confirm_comment_deletion(bot, interaction, comment_ref):
+    proc = require(bot, interaction)
+    await interaction.response.defer(ephemeral=True)
+    row, _ = await author_comment(proc, interaction, comment_ref)
+    if row["gh_kind"] == "review":
+        raise BridgeError("GitHub only allows deleting pending reviews.")
+    await reply(
+        interaction,
+        "Delete this comment on GitHub? This cannot be undone.",
+        view=DeleteView(bot, interaction.user.id, comment_ref),
+    )
 
 
 @app_commands.guild_only()
@@ -282,7 +318,7 @@ class BridgeAdmin(commands.GroupCog, group_name="bridge", group_description="Man
 
 @app_commands.guild_only()
 class GitHubAccount(
-    commands.GroupCog, group_name="github", group_description="Your GitHub account"
+    commands.GroupCog, group_name="github", group_description="GitHub accounts and comments"
 ):
     def __init__(self, bot):
         self.bot = bot
@@ -315,6 +351,41 @@ class GitHubAccount(
             "SELECT gh_login FROM user_links WHERE discord_id=?", (interaction.user.id,)
         )
         await reply(interaction, f"Linked as **{row['gh_login']}**.")
+
+    @app_commands.command(name="edit-comment", description="Edit one of your GitHub comments")
+    @app_commands.describe(comment="Choose one of your comments in this thread")
+    async def edit_comment(self, interaction: discord.Interaction, comment: str):
+        await open_comment_editor(self.bot, interaction, comment)
+
+    @app_commands.command(name="delete-comment", description="Delete one of your GitHub comments")
+    @app_commands.describe(comment="Choose one of your comments in this thread")
+    async def delete_comment(self, interaction: discord.Interaction, comment: str):
+        await confirm_comment_deletion(self.bot, interaction, comment)
+
+    async def owned_comments(self, interaction: discord.Interaction, current: str):
+        try:
+            proc = require(self.bot, interaction)
+            post = await thread_post(proc, interaction)
+        except (ProcessDisabled, BridgeError):
+            return []
+        rows = await proc.store.all(
+            "SELECT gh_kind, gh_comment_id, activity_text FROM comments JOIN user_links "
+            "ON comments.gh_author_id=user_links.gh_id "
+            "WHERE guild_id=? AND thread_id=? AND discord_id=? AND collapsed=0 "
+            "AND instr(lower(coalesce(activity_text, '') || ' ' || gh_comment_id), ?) > 0 "
+            "ORDER BY activity_at DESC, gh_comment_id DESC LIMIT 25",
+            (post["guild_id"], post["thread_id"], interaction.user.id, current.casefold()),
+        )
+        return [
+            app_commands.Choice(
+                name=f"{row['gh_comment_id']} · {(row['activity_text'] or row['gh_kind'])[:65]}",
+                value=f"{row['gh_kind']}:{row['gh_comment_id']}",
+            )
+            for row in rows
+        ]
+
+    edit_comment.autocomplete("comment")(owned_comments)
+    delete_comment.autocomplete("comment")(owned_comments)
 
 
 class CommentModal(discord.ui.Modal):
@@ -456,33 +527,10 @@ class ThreadActions(commands.Cog):
         await reply(interaction, "Updated on GitHub. The webhook will sync this thread.")
 
     async def edit(self, interaction: discord.Interaction, message: discord.Message):
-        proc = require(self.bot, interaction)
-        await interaction.response.defer(ephemeral=True)
-        row, token = await author_comment(proc, interaction, message.id)
-        comment = await proc.gh.get_comment(row, token)
-        body = comment.get("body") or ""
-        if len(body) > 4000:
-            raise BridgeError("This comment exceeds the Discord editor limit. Edit it on GitHub.")
-        await reply(
-            interaction,
-            "Edit your GitHub comment:",
-            view=EditView(self.bot, interaction.user.id, message.id, body),
-        )
+        await open_comment_editor(self.bot, interaction, message.id)
 
     async def delete(self, interaction: discord.Interaction, message: discord.Message):
-        proc = require(self.bot, interaction)
-        await interaction.response.defer(ephemeral=True)
-        row, token = await author_comment(proc, interaction, message.id)
-        if row["gh_kind"] == "review":
-            raise BridgeError(
-                "GitHub only allows deleting pending reviews. "
-                "Submitted reviews cannot be deleted through this action."
-            )
-        await reply(
-            interaction,
-            "Delete this comment on GitHub? This cannot be undone.",
-            view=DeleteView(self.bot, interaction.user.id, message.id),
-        )
+        await confirm_comment_deletion(self.bot, interaction, message.id)
 
 
 async def setup(bot):

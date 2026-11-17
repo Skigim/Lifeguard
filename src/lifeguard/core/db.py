@@ -26,6 +26,13 @@ MIGRATIONS = (
     CREATE TABLE deliveries(delivery_id TEXT PRIMARY KEY, received_at REAL, processed_at REAL);
     CREATE TABLE bridge_state(key TEXT PRIMARY KEY, value TEXT);
     """,
+    """
+    ALTER TABLE comments ADD COLUMN activity_text TEXT;
+    ALTER TABLE comments ADD COLUMN activity_url TEXT;
+    ALTER TABLE comments ADD COLUMN activity_at TEXT;
+    ALTER TABLE posts ADD COLUMN latest_notice TEXT;
+    CREATE INDEX comments_activity ON comments(guild_id, thread_id, activity_at DESC);
+    """,
 )
 
 
