@@ -3,6 +3,7 @@ from collections import defaultdict
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import discord
 import pytest
 
 from lifeguard.features.github.cogs import BridgeError, CommentModal, DeleteView
@@ -47,8 +48,12 @@ async def actions(store):
         guild_id=1,
         channel_id=20,
         user=SimpleNamespace(id=5),
-        response=SimpleNamespace(defer=AsyncMock(), is_done=lambda: True),
-        followup=SimpleNamespace(send=AsyncMock()),
+        response=SimpleNamespace(
+            defer=AsyncMock(),
+            is_done=lambda: True,
+            type=discord.InteractionResponseType.deferred_channel_message,
+        ),
+        edit_original_response=AsyncMock(return_value=SimpleNamespace(delete=AsyncMock())),
     )
     return bot, proc, interaction
 
@@ -58,6 +63,8 @@ async def test_modal_defers_then_writes_and_mirrors(actions):
     modal = CommentModal(bot, message_id=30, body="changed")
     await modal.on_submit(interaction)
     interaction.response.defer.assert_awaited_once_with(ephemeral=True)
+    interaction.edit_original_response.assert_awaited_once_with(content="Saved on GitHub.")
+    interaction.edit_original_response.return_value.delete.assert_awaited_once_with(delay=30)
     assert proc.gh.edit_comment.call_args.args[1:] == ("changed", "token")
     assert proc.sink.comment.call_args.args[-2:] == ("issue_comment", "edited")
     modal = CommentModal(bot, body="new")

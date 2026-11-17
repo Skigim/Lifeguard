@@ -12,6 +12,7 @@ from discord.ext import commands
 from lifeguard.config import Settings
 from lifeguard.core.db import SqliteEnablementStore
 from lifeguard.core.loader import Loader, ProcessDisabled, ProcessStartFailed
+from lifeguard.core.replies import reply
 from lifeguard.features import FEATURE_EXTENSIONS, FEATURES
 
 log = logging.getLogger(__name__)
@@ -36,10 +37,7 @@ async def on_app_command_error(
     else:
         log.error("Unhandled command error", exc_info=error)
         message = "Something went wrong running that command."
-    if interaction.response.is_done():
-        await interaction.followup.send(message, ephemeral=True)
-    else:
-        await interaction.response.send_message(message, ephemeral=True)
+    await reply(interaction, message)
 
 
 class LifeguardBot(commands.Bot):

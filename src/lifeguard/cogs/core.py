@@ -6,6 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from lifeguard.core.replies import reply
 from lifeguard.features import FEATURES
 
 FEATURE_DOCS_URL = "https://github.com/Skigim/Lifeguard/blob/main/docs/features"
@@ -21,7 +22,7 @@ class Core(commands.Cog):
 
     @app_commands.command(name="ping", description="Check the bot's latency")
     async def ping(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(format_latency(self.bot.latency), ephemeral=True)
+        await reply(interaction, format_latency(self.bot.latency))
 
     @app_commands.command(name="help", description="Open the documentation for a bot feature")
     @app_commands.describe(feature="Choose the feature you want help with")
@@ -31,7 +32,7 @@ class Core(commands.Cog):
             message = f"[Open the {name} documentation]({FEATURE_DOCS_URL}/{name}.md)"
         else:
             message = "Unknown feature. Choose a feature from the `/help` suggestions."
-        await interaction.response.send_message(message, ephemeral=True)
+        await reply(interaction, message)
 
     @help.autocomplete("feature")
     async def help_features(

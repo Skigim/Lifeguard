@@ -13,6 +13,7 @@ from discord.ext import commands
 from gidgethub import GitHubException
 
 from lifeguard.core.loader import ProcessDisabled
+from lifeguard.core.replies import REPLY_TTL, reply
 
 from .gh import RelinkRequired
 from .tags import REQUIRED_TAGS
@@ -28,17 +29,10 @@ def require(bot, interaction):
     return bot.loader.require("github", interaction.guild_id)
 
 
-async def reply(interaction, text, **kwargs):
-    if interaction.response.is_done():
-        await interaction.followup.send(text, ephemeral=True, **kwargs)
-    else:
-        await interaction.response.send_message(text, ephemeral=True, **kwargs)
-
-
 async def link_view(proc, user_id):
     state = secrets.token_urlsafe(32)
     await proc.store.put("oauth_states", state=state, discord_id=user_id, created_at=time.time())
-    view = discord.ui.View()
+    view = discord.ui.View(timeout=600)
     view.add_item(
         discord.ui.Button(
             label="Link GitHub", url=f"{proc.settings.public_url}/oauth/start?state={state}"
@@ -397,7 +391,9 @@ class DeleteView(discord.ui.View):
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id == self.user_id:
             self.used = True
-            await interaction.response.edit_message(content="Cancelled.", view=None)
+            await interaction.response.edit_message(
+                content="Cancelled.", view=None, delete_after=REPLY_TTL
+            )
             self.stop()
 
 

@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from lifeguard.core.loader import Loader
+from lifeguard.core.replies import reply
 
 
 def render_feature_list(loader: Loader, guild_id: int) -> str:
@@ -42,28 +43,26 @@ class FeatureAdmin(
     async def enable(self, interaction: discord.Interaction, name: str) -> None:
         assert interaction.guild_id is not None
         if name not in self.loader.names:
-            await interaction.response.send_message(f"Unknown feature `{name}`.", ephemeral=True)
+            await reply(interaction, f"Unknown feature `{name}`.")
             return
         await interaction.response.defer(ephemeral=True)
         await self.loader.enable(name, interaction.guild_id)
-        await interaction.followup.send(f"Enabled `{name}`.", ephemeral=True)
+        await reply(interaction, f"Enabled `{name}`.")
 
     @app_commands.command(name="disable", description="Disable a feature on this server")
     async def disable(self, interaction: discord.Interaction, name: str) -> None:
         assert interaction.guild_id is not None
         if name not in self.loader.names:
-            await interaction.response.send_message(f"Unknown feature `{name}`.", ephemeral=True)
+            await reply(interaction, f"Unknown feature `{name}`.")
             return
         await interaction.response.defer(ephemeral=True)
         await self.loader.disable(name, interaction.guild_id)
-        await interaction.followup.send(f"Disabled `{name}`.", ephemeral=True)
+        await reply(interaction, f"Disabled `{name}`.")
 
     @app_commands.command(name="list", description="Show features and their state")
     async def list_features(self, interaction: discord.Interaction) -> None:
         assert interaction.guild_id is not None
-        await interaction.response.send_message(
-            render_feature_list(self.loader, interaction.guild_id), ephemeral=True
-        )
+        await reply(interaction, render_feature_list(self.loader, interaction.guild_id))
 
     enable.autocomplete("name")(_names)
     disable.autocomplete("name")(_names)

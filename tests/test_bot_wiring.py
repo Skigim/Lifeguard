@@ -93,12 +93,14 @@ async def test_enable_disable_cycle(bot):
 class FakeResponse:
     def __init__(self):
         self.sent = None
+        self.delete_after = None
 
     def is_done(self):
         return False
 
-    async def send_message(self, message, ephemeral=False):
+    async def send_message(self, message, ephemeral=False, delete_after=None):
         self.sent = (message, ephemeral)
+        self.delete_after = delete_after
 
 
 class FakeInteraction:
@@ -125,5 +127,6 @@ async def test_help_autocompletes_features_and_links_the_doc(bot):
     message, ephemeral = interaction.response.sent
     assert "https://github.com/Skigim/Lifeguard/blob/main/docs/features/github.md" in message
     assert ephemeral
+    assert interaction.response.delete_after == 30
     await command.callback(command.binding, interaction, "unknown")
     assert interaction.response.sent[0].startswith("Unknown feature.")
