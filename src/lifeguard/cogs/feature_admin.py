@@ -44,8 +44,9 @@ class FeatureAdmin(
         if name not in self.loader.names:
             await interaction.response.send_message(f"Unknown feature `{name}`.", ephemeral=True)
             return
+        await interaction.response.defer(ephemeral=True)
         await self.loader.enable(name, interaction.guild_id)
-        await interaction.response.send_message(f"Enabled `{name}`.", ephemeral=True)
+        await interaction.followup.send(f"Enabled `{name}`.", ephemeral=True)
 
     @app_commands.command(name="disable", description="Disable a feature on this server")
     async def disable(self, interaction: discord.Interaction, name: str) -> None:
@@ -53,8 +54,9 @@ class FeatureAdmin(
         if name not in self.loader.names:
             await interaction.response.send_message(f"Unknown feature `{name}`.", ephemeral=True)
             return
+        await interaction.response.defer(ephemeral=True)
         await self.loader.disable(name, interaction.guild_id)
-        await interaction.response.send_message(f"Disabled `{name}`.", ephemeral=True)
+        await interaction.followup.send(f"Disabled `{name}`.", ephemeral=True)
 
     @app_commands.command(name="list", description="Show features and their state")
     async def list_features(self, interaction: discord.Interaction) -> None:

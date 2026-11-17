@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import logging
+from functools import partial
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from lifeguard.config import Settings
-from lifeguard.core.loader import Loader, ProcessDisabled
+from lifeguard.core.db import SqliteEnablementStore
+from lifeguard.core.loader import Loader, ProcessDisabled, ProcessStartFailed
 from lifeguard.features import FEATURE_EXTENSIONS, FEATURES
 
 log = logging.getLogger(__name__)
@@ -17,17 +19,20 @@ log = logging.getLogger(__name__)
 EXTENSIONS = ("lifeguard.cogs.core", "lifeguard.cogs.feature_admin", *FEATURE_EXTENSIONS)
 
 DISABLED_MESSAGE = (
-    "That feature isn't enabled on this server. "
-    "An admin can turn it on with `/feature enable`."
+    "That feature isn't enabled on this server. An admin can turn it on with `/feature enable`."
 )
 
 
 async def on_app_command_error(
     interaction: discord.Interaction, error: app_commands.AppCommandError
 ) -> None:
+    if getattr(interaction, "extras", {}).get("github_error_handled"):
+        return
     original = getattr(error, "original", error)
     if isinstance(original, ProcessDisabled):
         message = DISABLED_MESSAGE
+    elif isinstance(original, ProcessStartFailed):
+        message = str(original)
     else:
         log.error("Unhandled command error", exc_info=error)
         message = "Something went wrong running that command."
@@ -41,13 +46,18 @@ class LifeguardBot(commands.Bot):
     def __init__(self, settings: Settings, loader: Loader | None = None) -> None:
         super().__init__(command_prefix=commands.when_mentioned, intents=discord.Intents.default())
         self.settings = settings
-        self.loader = loader or Loader()
+        self.enablement_store = (
+            SqliteEnablementStore(settings.database_path)
+            if settings.database_path and loader is None
+            else None
+        )
+        self.loader = loader or Loader(self.enablement_store)
         self.tree.error(on_app_command_error)
 
     async def load_features(self) -> None:
         """Register processes, start any already-enabled ones, then load their commands."""
         for name, factory in FEATURES.items():
-            self.loader.register(name, factory)
+            self.loader.register(name, partial(factory, self))
         await self.loader.start_enabled()
         for ext in EXTENSIONS:
             await self.load_extension(ext)
@@ -65,6 +75,8 @@ class LifeguardBot(commands.Bot):
 
     async def close(self) -> None:
         await self.loader.shutdown()
+        if self.enablement_store:
+            self.enablement_store.close()
         await super().close()
 
     async def on_ready(self) -> None:

@@ -20,6 +20,13 @@ class ProcessDisabled(RuntimeError):
     pass
 
 
+class ProcessStartFailed(RuntimeError):
+    def __init__(self, name: str, reason: Exception):
+        self.name = name
+        self.reason = reason
+        super().__init__(f"Couldn't start `{name}`: {reason}")
+
+
 class EnablementStore(Protocol):
     """Persistence boundary for which guild has which process enabled."""
 
@@ -71,12 +78,18 @@ class Loader:
     async def enable(self, name: str, guild_id: int) -> None:
         self._check(name)
         async with self._lock:
+            already_enabled = self.is_enabled(name, guild_id)
             self._store.add(name, guild_id)
             proc = self._running.get(name)
-            if proc is None:
-                await self._start(name)
-            else:
-                await proc.on_guild_enabled(guild_id)
+            try:
+                if proc is None:
+                    await self._start(name)
+                elif not already_enabled:
+                    await proc.on_guild_enabled(guild_id)
+            except BaseException:
+                if not already_enabled:
+                    self._store.remove(name, guild_id)
+                raise
 
     async def disable(self, name: str, guild_id: int) -> None:
         self._check(name)
@@ -102,7 +115,10 @@ class Loader:
         async with self._lock:
             for name in self.names:
                 if self._store.guilds_for(name) and name not in self._running:
-                    await self._start(name)
+                    try:
+                        await self._start(name)
+                    except ProcessStartFailed:
+                        log.exception("Skipping failed process %s during startup", name)
 
     async def shutdown(self) -> None:
         async with self._lock:
@@ -114,13 +130,13 @@ class Loader:
             raise UnknownProcess(name)
 
     async def _start(self, name: str) -> None:
-        proc = self._factories[name]()
         try:
+            proc = self._factories[name]()
             await proc.start()
-        except Exception:
+        except Exception as exc:
             self._state[name] = ProcessState.FAILED
             log.exception("process %s failed to start", name)
-            raise
+            raise ProcessStartFailed(name, exc) from exc
         self._running[name] = proc
         self._state[name] = ProcessState.RUNNING
         log.info("process %s started", name)

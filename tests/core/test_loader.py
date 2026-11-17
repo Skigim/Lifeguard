@@ -103,8 +103,22 @@ async def test_failed_start_is_reported_and_not_running():
     with pytest.raises(RuntimeError):
         await ld.enable("boom", 1)
     assert ld.state("boom") is ProcessState.FAILED
+    assert not ld.is_enabled("boom", 1)
     with pytest.raises(ProcessDisabled):
         ld.require("boom", 1)
+
+
+async def test_boot_continues_after_failure():
+    ld = Loader()
+    ld.register("boom", Boom)
+    ld.register("fake", Fake)
+    ld._store.add("boom", 1)
+    ld._store.add("fake", 1)
+    await ld.start_enabled()
+    assert ld.state("boom") is ProcessState.FAILED
+    assert ld.state("fake") is ProcessState.RUNNING
+    assert ld.is_enabled("boom", 1)
+    await ld.shutdown()
 
 
 async def test_unknown_and_duplicate(loader):

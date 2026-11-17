@@ -26,12 +26,42 @@ async def test_commands_registered(bot):
     assert {"ping", "greet", "feature enable", "feature disable", "feature list"} <= command_paths(
         bot
     )
+    assert {
+        "bridge link-repo",
+        "bridge unlink-repo",
+        "bridge repos",
+        "bridge backfill",
+        "bridge map-label",
+        "bridge bot-login add",
+        "bridge bot-login remove",
+        "github link",
+        "github unlink",
+        "github whoami",
+        "comment",
+        "close",
+        "reopen",
+    } <= command_paths(bot)
+    menus = bot.tree.get_commands(type=discord.AppCommandType.message)
+    assert {menu.name for menu in menus} == {"Edit on GitHub", "Delete on GitHub"}
 
 
 async def test_feature_group_requires_manage_guild(bot):
     group = bot.tree.get_command("feature")
     assert group.guild_only is True
     assert group.default_permissions.manage_guild is True
+    bridge = bot.tree.get_command("bridge")
+    assert bridge.guild_only and bridge.default_permissions.manage_guild
+
+
+async def test_github_missing_config_is_friendly(bot):
+    from lifeguard.core.loader import ProcessStartFailed
+
+    with pytest.raises(ProcessStartFailed) as caught:
+        await bot.loader.enable("github", 1)
+    interaction = FakeInteraction()
+    await on_app_command_error(interaction, caught.value)
+    assert "Couldn't start `github`" in interaction.response.sent[0]
+    assert not bot.loader.is_enabled("github", 1)
 
 
 async def test_enable_disable_cycle(bot):

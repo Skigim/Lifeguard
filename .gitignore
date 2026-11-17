@@ -7,5 +7,9 @@ __pycache__/
 .env.*
 !.env.example
 *.log
+data/
+*.db
+*.db-wal
+*.db-shm
 serviceAccountKey*.json
 *-firebase-adminsdk-*.json

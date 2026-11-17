@@ -14,7 +14,7 @@ class Greeter(Process):
 
     name = "greeter"
 
-    def __init__(self) -> None:
+    def __init__(self, bot=None) -> None:
         self.greeted = 0
 
     async def start(self) -> None:

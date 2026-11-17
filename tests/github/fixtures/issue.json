@@ -1,0 +1,20 @@
+{
+  "action": "opened",
+  "repository": {"full_name": "example/demo"},
+  "sender": {"id": 7, "login": "alice"},
+  "issue": {
+    "number": 42,
+    "title": "Example issue",
+    "body": "Hello <!-- hidden --> **world**",
+    "state": "open",
+    "html_url": "https://github.com/example/demo/issues/42",
+    "labels": [{"name": "bug"}],
+    "user": {"id": 7, "login": "alice", "type": "User", "avatar_url": "https://example.com/a.png"}
+  },
+  "comment": {
+    "id": 99,
+    "body": "A comment",
+    "html_url": "https://github.com/example/demo/issues/42#issuecomment-99",
+    "user": {"id": 7, "login": "alice", "type": "User"}
+  }
+}
