@@ -1,19 +1,5 @@
-from cryptography.fernet import Fernet, InvalidToken
+"""Compatibility imports for GitHub token encryption."""
 
-from lifeguard.config import ConfigError
+from lifeguard.core.github.crypto import InvalidToken, TokenCipher
 
-__all__ = ["TokenCipher", "InvalidToken"]
-
-
-class TokenCipher:
-    def __init__(self, key):
-        try:
-            self.fernet = Fernet(key.encode())
-        except (ValueError, TypeError) as exc:
-            raise ConfigError("TOKEN_ENCRYPTION_KEY must be a Fernet key") from exc
-
-    def encrypt(self, value):
-        return self.fernet.encrypt(value.encode()).decode() if value else None
-
-    def decrypt(self, value):
-        return self.fernet.decrypt(value.encode()).decode() if value else None
+__all__ = ["InvalidToken", "TokenCipher"]

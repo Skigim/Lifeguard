@@ -33,11 +33,14 @@ class EnablementStore(Protocol):
     def guilds_for(self, name: str) -> set[int]: ...
     def add(self, name: str, guild_id: int) -> None: ...
     def remove(self, name: str, guild_id: int) -> None: ...
+    def command_guilds(self) -> set[int]: ...
+    def track_command_guild(self, guild_id: int, tracked: bool) -> None: ...
 
 
 class InMemoryEnablementStore:
     def __init__(self) -> None:
         self._data: dict[str, set[int]] = {}
+        self._command_guilds: set[int] = set()
 
     def guilds_for(self, name: str) -> set[int]:
         return set(self._data.get(name, ()))
@@ -47,6 +50,15 @@ class InMemoryEnablementStore:
 
     def remove(self, name: str, guild_id: int) -> None:
         self._data.get(name, set()).discard(guild_id)
+
+    def command_guilds(self) -> set[int]:
+        return self._command_guilds.copy()
+
+    def track_command_guild(self, guild_id: int, tracked: bool) -> None:
+        if tracked:
+            self._command_guilds.add(guild_id)
+        else:
+            self._command_guilds.discard(guild_id)
 
 
 class Loader:
@@ -72,8 +84,17 @@ class Loader:
         return self._state[name]
 
     def is_enabled(self, name: str, guild_id: int) -> bool:
+        return guild_id in self.guilds_for(name)
+
+    def guilds_for(self, name: str) -> set[int]:
         self._check(name)
-        return guild_id in self._store.guilds_for(name)
+        return self._store.guilds_for(name)
+
+    def command_guilds(self) -> set[int]:
+        return self._store.command_guilds()
+
+    def track_command_guild(self, guild_id: int, tracked: bool) -> None:
+        self._store.track_command_guild(guild_id, tracked)
 
     async def enable(self, name: str, guild_id: int) -> None:
         self._check(name)

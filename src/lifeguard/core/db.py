@@ -1,8 +1,12 @@
-"""Ordered, transactional SQLite migrations shared by the core and bridge."""
+"""Ordered, transactional SQLite migrations shared by the core and features."""
 
 import sqlite3
 from contextlib import closing
 from pathlib import Path
+
+USER_TIMEZONES_SCHEMA = """
+CREATE TABLE user_timezones(discord_id INTEGER PRIMARY KEY, zone TEXT NOT NULL);
+"""
 
 MIGRATIONS = (
     """
@@ -32,6 +36,13 @@ MIGRATIONS = (
     ALTER TABLE comments ADD COLUMN activity_at TEXT;
     ALTER TABLE posts ADD COLUMN latest_notice TEXT;
     CREATE INDEX comments_activity ON comments(guild_id, thread_id, activity_at DESC);
+    """,
+    USER_TIMEZONES_SCHEMA,
+    """
+    CREATE TABLE local_review_requests(message_id INTEGER PRIMARY KEY);
+    """,
+    """
+    CREATE TABLE plugin_command_guilds(guild_id INTEGER PRIMARY KEY);
     """,
 )
 
@@ -75,6 +86,18 @@ class SqliteEnablementStore:
     def remove(self, name: str, guild_id: int) -> None:
         with self.db:
             self.db.execute("DELETE FROM enablement WHERE name=? AND guild_id=?", (name, guild_id))
+
+    def command_guilds(self) -> set[int]:
+        return {row[0] for row in self.db.execute("SELECT guild_id FROM plugin_command_guilds")}
+
+    def track_command_guild(self, guild_id: int, tracked: bool) -> None:
+        with self.db:
+            if tracked:
+                self.db.execute(
+                    "INSERT OR IGNORE INTO plugin_command_guilds VALUES (?)", (guild_id,)
+                )
+            else:
+                self.db.execute("DELETE FROM plugin_command_guilds WHERE guild_id=?", (guild_id,))
 
     def close(self) -> None:
         self.db.close()

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from lifeguard.core.loader import Loader
 from lifeguard.core.replies import reply
+
+if TYPE_CHECKING:
+    from lifeguard.bot import LifeguardBot
 
 
 def render_feature_list(loader: Loader, guild_id: int) -> str:
@@ -25,12 +30,12 @@ class FeatureAdmin(
     group_name="feature",
     group_description="Enable or disable bot features",
 ):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LifeguardBot) -> None:
         self.bot = bot
 
     @property
     def loader(self) -> Loader:
-        return self.bot.loader  # type: ignore[attr-defined]
+        return self.bot.loader
 
     async def _names(self, interaction: discord.Interaction, current: str):
         return [
@@ -46,8 +51,11 @@ class FeatureAdmin(
             await reply(interaction, f"Unknown feature `{name}`.")
             return
         await interaction.response.defer(ephemeral=True)
-        await self.loader.enable(name, interaction.guild_id)
-        await reply(interaction, f"Enabled `{name}`.")
+        synced = await self.bot.set_feature_enabled(name, interaction.guild_id, True)
+        message = f"Enabled `{name}`."
+        if not synced:
+            message += " Discord could not sync its commands. Run `/feature enable` again to retry."
+        await reply(interaction, message)
 
     @app_commands.command(name="disable", description="Disable a feature on this server")
     async def disable(self, interaction: discord.Interaction, name: str) -> None:
@@ -56,8 +64,13 @@ class FeatureAdmin(
             await reply(interaction, f"Unknown feature `{name}`.")
             return
         await interaction.response.defer(ephemeral=True)
-        await self.loader.disable(name, interaction.guild_id)
-        await reply(interaction, f"Disabled `{name}`.")
+        synced = await self.bot.set_feature_enabled(name, interaction.guild_id, False)
+        message = f"Disabled `{name}`."
+        if not synced:
+            message += (
+                " Discord could not sync its commands. Run `/feature disable` again to retry."
+            )
+        await reply(interaction, message)
 
     @app_commands.command(name="list", description="Show features and their state")
     async def list_features(self, interaction: discord.Interaction) -> None:
@@ -68,5 +81,5 @@ class FeatureAdmin(
     disable.autocomplete("name")(_names)
 
 
-async def setup(bot: commands.Bot) -> None:
+async def setup(bot: LifeguardBot) -> None:
     await bot.add_cog(FeatureAdmin(bot))

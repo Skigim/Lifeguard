@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from lifeguard.config import ConfigError, Settings
+from lifeguard.core.github.service import GitHubService
 from lifeguard.features.github.process import GitHubBridge
 from lifeguard.features.github.recovery import recover
 
@@ -102,6 +103,7 @@ async def test_process_start_stop_releases_resources(tmp_path, unused_tcp_port):
         ),
         wait_until_ready=ready.wait,
     )
+    bot.github_service = GitHubService(bot.settings)
     bridge = GitHubBridge(bot)
     await bridge.start()
     try:
@@ -110,6 +112,11 @@ async def test_process_start_stop_releases_resources(tmp_path, unused_tcp_port):
             client.get(f"http://127.0.0.1:{unused_tcp_port}/healthz") as response,
         ):
             assert response.status == 200
+        async with bot.github_service.connect() as shared:
+            assert shared.gh is bridge.gh
+            await bridge.stop()
+            assert shared.webhook is None
+            assert not shared.session.closed
     finally:
         await bridge.stop()
     assert bridge.session.closed and bridge.worker.done() and bridge.recovery.done()

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import re
-import secrets
-import time
 from typing import Literal
 
 import discord
@@ -12,6 +10,7 @@ from discord import app_commands
 from discord.ext import commands
 from gidgethub import GitHubException
 
+from lifeguard.core.github.web import link_url
 from lifeguard.core.loader import ProcessDisabled
 from lifeguard.core.replies import REPLY_TTL, reply
 
@@ -30,13 +29,9 @@ def require(bot, interaction):
 
 
 async def link_view(proc, user_id):
-    state = secrets.token_urlsafe(32)
-    await proc.store.put("oauth_states", state=state, discord_id=user_id, created_at=time.time())
     view = discord.ui.View(timeout=600)
     view.add_item(
-        discord.ui.Button(
-            label="Link GitHub", url=f"{proc.settings.public_url}/oauth/start?state={state}"
-        )
+        discord.ui.Button(label="Link GitHub", url=await link_url(proc, user_id))
     )
     return view
 

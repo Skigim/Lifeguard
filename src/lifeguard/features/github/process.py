@@ -4,19 +4,15 @@ import asyncio
 import logging
 from collections import defaultdict
 from contextlib import AsyncExitStack
-
-import aiohttp
-from aiohttp import web
+from functools import partial
 
 from lifeguard.config import ConfigError
 from lifeguard.core.process import Process
 
 from .events import Events
-from .gh import GitHub
 from .recovery import recover
-from .store import Store
 from .sync import DiscordSink
-from .web import make_app
+from .web import webhook
 
 log = logging.getLogger(__name__)
 
@@ -38,21 +34,15 @@ class GitHubBridge(Process):
         if not self.settings or not self.bot.settings.database_path:
             raise ConfigError("github requires GitHub App settings and DATABASE_PATH")
         try:
-            self.store = await Store.open(self.bot.settings.database_path)
-            self.resources.push_async_callback(self.store.close)
-            self.session = await self.resources.enter_async_context(
-                aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
-            )
-            self.gh = GitHub(self.session, self.settings, self.store)
+            service = await self.resources.enter_async_context(self.bot.github_service.connect())
+            self.store, self.gh, self.session = service.store, service.gh, service.session
             self.sink = DiscordSink(self.bot, self.store)
             self.events = Events(self.store, self.gh, self.sink, self.enabled, self.locks)
-            self.runner = web.AppRunner(make_app(self), access_log=None)
-            await self.runner.setup()
-            self.resources.push_async_callback(self.runner.cleanup)
-            await web.TCPSite(self.runner, self.settings.web_host, self.settings.web_port).start()
             self.worker = asyncio.create_task(self.work(), name="github-events")
             self.recovery = asyncio.create_task(self.recover_ready(), name="github-recovery")
             self.resources.push_async_callback(self.cancel_tasks)
+            service.webhook = partial(webhook, bridge=self)
+            self.resources.callback(setattr, service, "webhook", None)
         except BaseException:
             await self.resources.aclose()
             raise

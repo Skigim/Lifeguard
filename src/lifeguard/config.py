@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -36,6 +36,7 @@ class Settings:
     guild_id: int | None = None
     database_path: str | None = None
     github: GitHubSettings | None = None
+    environ: Mapping[str, str] = field(default_factory=dict, repr=False, compare=False)
 
     @property
     def is_production(self) -> bool:
@@ -103,6 +104,7 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         guild_id=guild_id,
         database_path=env_map.get("DATABASE_PATH") or None,
         github=github,
+        environ=env_map,
     )
 
 
