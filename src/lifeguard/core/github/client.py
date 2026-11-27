@@ -48,8 +48,11 @@ class GitHub:
         token = await self.installation_token(installation)
         item = await self.api.getitem(f"/repos/{repo}/issues/{number}", oauth_token=token)
         if "pull_request" in item:
-            item = await self.api.getitem(f"/repos/{repo}/pulls/{number}", oauth_token=token)
+            item = await self.get_pull_request(repo, number, token)
         return item
+
+    async def get_pull_request(self, repo, number, token):
+        return await self.api.getitem(f"/repos/{repo}/pulls/{number}", oauth_token=token)
 
     async def list_open(self, repo, installation, since=None):
         token = await self.installation_token(installation)

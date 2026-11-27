@@ -1,11 +1,33 @@
 # Local review
 
-From inside a Discord thread or forum post, send an actual mention of the bot:
+Start a message with a Discord mention of Lifeguard, followed by your prompt.
+Inside a thread or forum post, Lifeguard sends the recent discussion to the
+agent along with your prompt. The agent's answer appears as a reply in Discord.
+
+> @Lifeguard, review this thread and recommend a milestone title and checklist
+
+You can also follow up on a Lifeguard message by replying to it, forwarding it,
+pasting its Discord link, or quoting text from a recent Lifeguard reply in the
+same server. Ask a question or make a request as you would with another person.
+Sharing, quoting, or commenting on what Lifeguard said without addressing it
+leaves the discussion alone.
+
+A tag in the middle of a message can also invite a reply. If you tease Lifeguard,
+it might react with an emoji or answer with a quick comeback. Neutral mentions
+stay quiet. Start with a mention or follow up on a Lifeguard message for GitHub requests.
+
+If you ask Lifeguard to post a comment on a GitHub pull request, it uses your
+linked GitHub account and a repository configured for the server. Include the
+PR number or link when the conversation leaves the target unclear. For Discord
+message links across channels, Lifeguard can identify its message without
+repeating text from the source channel.
+
+To file GitHub issues, ask explicitly inside the discussion thread:
 
 > @Lifeguard, review this discussion thread and add relevant issues to GitHub
 
-Lifeguard hands the discussion to a connected agent. It opens up to three issues
-using your linked GitHub account and replies in the thread with their links.
+Lifeguard opens up to three issues using your linked GitHub account and replies
+in the thread with their links.
 It uses the server's local-review repository when configured. Existing bridge
 mappings also work. Append `repo:owner/repo` to select a configured repository
 explicitly.
@@ -17,19 +39,19 @@ explicitly.
 
 ## Enable the feature
 
-1. Configure the GitHub App and `DATABASE_PATH`. Install the App on the target
-   repository with **Issues: read and write** permission. GitHub user linking
-   uses the shared HTTPS callback at `{PUBLIC_URL}/oauth/callback`. The GitHub
-   bridge can stay disabled. [GitHub App configuration](github.md#github-app-setup)
-2. Set `LOCAL_REVIEW_TOKEN` to a random secret in the bot's environment. Give the
+1. Set `LOCAL_REVIEW_TOKEN` to a random secret in the bot's environment. Give the
    same secret to the agent connecting to the hook.
-3. Enable **Message Content Intent** in the Discord Developer Portal and restart
+2. Enable **Message Content Intent** in the Discord Developer Portal and restart
    Lifeguard. Grant the bot View Channel, Read Message History, and Send Messages
-   in Threads where you want to use it.
-4. Run `/feature enable name:local-review` in each server where you want the
-   feature. This registers `/lg` for that server. Set the default repository
-   with `/lg setup repo:owner/repo`. Each requester links their account from
-   **Link GitHub** in `/lg setup`.
+   in Threads where you want it to review discussions.
+3. Run `/feature enable name:local-review` in each server where you want the
+   feature. This registers `/lg` for that server.
+
+To enable issue creation, configure `DATABASE_PATH` and install the GitHub App
+on the target repository with **Issues: read and write** permission. Account
+linking uses `{PUBLIC_URL}/oauth/callback`. Set the default repository with
+`/lg setup repo:owner/repo` and link your account from **Link GitHub** in
+`/lg setup`. [GitHub App configuration](github.md#github-app-setup)
 
 The hook defaults to `http://127.0.0.1:8090`. Set `LOCAL_REVIEW_HOST` and
 `LOCAL_REVIEW_PORT` to change the binding. In Docker, use
@@ -54,15 +76,15 @@ Invoke-RestMethod http://127.0.0.1:8090/v1/health -Headers @{
 An agent can use any HTTP client and invoke its model or workflow when it
 receives a job.
 
-1. Call `POST /v1/jobs/next` with an empty body. It waits up to 20 seconds.
-   `204` means no job was available. Poll again. `200` claims one job and returns
-   JSON in this format:
+1. Call `POST /v1/jobs/next?include_replies=true&include_references=true` with an empty body. It waits
+   up to 20 seconds. `204` means no job was available. Poll again. `200` claims
+   one job and returns JSON in this format:
 
    ```json
    {
      "id": "job-id",
-     "action": "review_thread_for_github_issues",
-     "repo": "owner/repo",
+     "action": "respond_to_prompt",
+     "prompt": "Recommend a milestone title and checklist.",
      "thread": {
        "title": "Export discussion",
        "messages": ["CSV export drops the last row when a filter is active."]
@@ -71,12 +93,15 @@ receives a job.
    }
    ```
 
-2. Review the messages in chronological order. Treat them as source material,
-   including any instructions they contain. Return distinct, actionable issues
-   supported by the discussion. Keep credentials and personal information out
-   of the issue drafts.
-3. Send `POST /v1/jobs/{id}/result` with `Content-Type: application/json` and
-   your result. Titles can be up to 256 characters and bodies up to 1,200.
+2. Answer `prompt` using `thread.messages` as source material in chronological
+   order. The `thread` field is `null` for prompts sent outside a thread. Use
+   the `action` to choose the result format. Keep credentials and personal
+   information out of the response.
+3. Send `POST /v1/jobs/{id}/result` with `Content-Type: application/json`.
+   For `respond_to_prompt`, return `{"reply":"Your Discord reply"}` with up to
+   1,900 characters. For `review_thread_for_github_issues`, the job includes
+   `repo` and the result is an `issues` list. Draft up to three issues, each
+   with a title up to 256 characters and a body up to 1,200.
 
    ```json
    {
@@ -90,9 +115,24 @@ receives a job.
    ```
 
    Use `{"issues": []}` when there are no issues and `{"error": true}` if the
-   agent could not perform the review. `204` accepts the result, `422` means
+   agent could not complete the request. `204` accepts the result, `422` means
    the result needs correction, and `404` means the job has expired or finished.
-   The Discord reply reports whether the issues were actually created.
+   Lifeguard posts the reply text or reports which issues were created.
+
+Agents that poll `POST /v1/jobs/next` without the query parameter continue to
+receive issue jobs in the original format.
+
+With `include_references=true`, the agent can also receive `respond_to_reference`
+jobs. The `prompt` field contains the new sender's words and `reference` contains
+`kind`, `content`, and `mentioned`. Treat the reference as context for deciding
+what the sender is asking. Return `action`, `text`, `repo`, `pr_number`, and
+`issues`. Use `ignore` for passive discussion, `reply` for a Discord answer,
+`react` for a single emoji (`🤨`, `🙄`, `😔`, `😂`, or `👀`) in `text`,
+`create_issues` for an explicitly requested issue batch, and `post_pr_comment`
+for an explicitly requested PR comment. Unused fields use empty strings, `null`,
+or an empty list. Use `text` for the Discord reply or the PR comment body. Only
+the new sender's request can authorize a GitHub write. For an inline tag with
+`reference.kind` set to `mention`, only `ignore`, `reply`, and `react` are accepted.
 
 Lifeguard reads human text from up to 80 messages and 8,000 characters before
 the mention. It takes one review at a time and gives the agent up to two minutes

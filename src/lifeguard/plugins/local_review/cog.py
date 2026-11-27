@@ -1,9 +1,10 @@
-"""Send Discord thread reviews to a connected agent and file the resulting issues."""
+"""Send Discord prompts to a connected agent and handle explicit issue requests."""
 
 from __future__ import annotations
 
 import asyncio
 import re
+from contextlib import suppress
 from typing import TYPE_CHECKING
 
 import aiohttp
@@ -19,28 +20,42 @@ from lifeguard.core.loader import ProcessDisabled
 from lifeguard.core.plugins import PluginCog
 from lifeguard.core.replies import reply as private_reply
 
-from .process import LocalReview, ReviewError
+from .process import Followup, LocalReview, ReviewError, ReviewResult
+from .references import Reference, References
 
 if TYPE_CHECKING:
     from lifeguard.bot import LifeguardBot
+    from lifeguard.core.github.service import GitHubService
 
-REVIEW_REQUEST = re.compile(
+ISSUE_REQUEST = re.compile(
     r"(?:(?:can|could|would)\s+you\s+)?(?:please\s+)?"
-    r"(?:review|read|look\s+through)\s+(?:this|the)\s+"
-    r"(?:discussion(?:\s+thread)?|thread)(?:\s*,\s*|\s+)and\s+"
-    r"(?:add|create|file|open)\s+(?:(?:any|the|relevant|actionable|new|github)\s+)*issues?"
-    r"(?:\s+(?:to|on|in)\s+github)?[.!?]?"
+    r"(?:(?:review|read|look\s+through)\s+(?:this|the)\s+"
+    r"(?:discussion(?:\s+thread)?|thread)(?:\s*,\s*|\s+)and\s+)?"
+    r"(?:add|create|file|open)\s+(?:(?:an?|any|the|relevant|actionable|new|github)\s+)*issues?"
+    r"(?:\s+(?:to|on|in)\s+github)?"
+    r"(?:\s+from\s+(?:this|the)\s+(?:discussion(?:\s+thread)?|thread))?[.!?]?"
     r"(?:\s+repo:(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?))?[.!?]?",
     re.IGNORECASE,
 )
 MAX_MESSAGES = 80
 MAX_CONTEXT_CHARS = 8000
+CONTEXT_NOTICE = "\nI used the most recent messages within the context limit."
 REPO_PATTERN = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+PR_NUMBER = re.compile(r"(?:\b(?:pr|pull request)\s*#?\s*|#|/pull/)([1-9]\d*)\b", re.I)
+PR_LINK = re.compile(r"https://github\.com/([\w.-]+/[\w.-]+)/pull/([1-9]\d*)\b", re.I)
 REVIEW_DOCS = "https://github.com/Skigim/Lifeguard/blob/main/docs/features/local-review.md"
 
 
-async def select_repo(store: Store, thread: discord.Thread, requested: str | None) -> str:
-    guild_id = thread.guild.id
+def require_github(reviewer: LocalReview) -> GitHubService:
+    if reviewer.github is None:
+        raise ReviewError("Ask the bot operator to configure GitHub first.")
+    return reviewer.github
+
+
+async def select_repo(
+    store: Store, channel: discord.abc.GuildChannel | discord.Thread, requested: str | None
+) -> str:
+    guild_id = channel.guild.id
     configured = await store.one(
         "SELECT repo FROM local_review_repos WHERE guild_id=?", (guild_id,)
     )
@@ -59,18 +74,20 @@ async def select_repo(store: Store, thread: discord.Thread, requested: str | Non
     if configured is not None:
         return configured["repo"]
 
-    if post := await store.one(
-        "SELECT repo FROM posts JOIN repo_links USING (guild_id, repo) "
-        "WHERE guild_id=? AND thread_id=?",
-        (guild_id, thread.id),
-    ):
-        return post["repo"]
-    links = await store.all(
-        "SELECT repo FROM repo_links WHERE guild_id=? AND forum_id=? LIMIT 2",
-        (guild_id, thread.parent_id),
-    )
-    if not links:
-        links = await store.all("SELECT repo FROM repo_links WHERE guild_id=? LIMIT 2", (guild_id,))
+    if isinstance(channel, discord.Thread):
+        if post := await store.one(
+            "SELECT repo FROM posts JOIN repo_links USING (guild_id, repo) "
+            "WHERE guild_id=? AND thread_id=?",
+            (guild_id, channel.id),
+        ):
+            return post["repo"]
+        links = await store.all(
+            "SELECT repo FROM repo_links WHERE guild_id=? AND forum_id=? LIMIT 2",
+            (guild_id, channel.parent_id),
+        )
+        if len(links) == 1:
+            return links[0]["repo"]
+    links = await store.all("SELECT repo FROM repo_links WHERE guild_id=? LIMIT 2", (guild_id,))
     if len(links) == 1:
         return links[0]["repo"]
     if not links:
@@ -118,6 +135,7 @@ class LocalReviewCog(PluginCog):
     def __init__(self, bot: LifeguardBot) -> None:
         self.bot = bot
         self.review_lock = asyncio.Lock()
+        self.references = References()
         self.guild_commands = app_commands.Group(
             name="lg", description="Connect an agent to Lifeguard", guild_only=True
         )
@@ -140,8 +158,8 @@ class LocalReviewCog(PluginCog):
             f"**Local review is enabled in this server.** {address}\n"
             "Use `Authorization: Bearer <LOCAL_REVIEW_TOKEN>` on each request.\n"
             "- `GET /v1/health` checks connectivity and authentication.\n"
-            "- `POST /v1/jobs/next` claims a review job.\n"
-            "- `POST /v1/jobs/{id}/result` returns the proposed issues.\n"
+            "- `POST /v1/jobs/next?include_replies=true&include_references=true` claims requests.\n"
+            "- `POST /v1/jobs/{id}/result` returns the reply or issue drafts.\n"
             "Run `/lg setup` for connection and account-linking steps.",
         )
 
@@ -155,6 +173,9 @@ class LocalReviewCog(PluginCog):
                 await private_reply(
                     interaction, "Manage Server permission is required to set a repo."
                 )
+                return
+            if reviewer.github is None:
+                await private_reply(interaction, "Ask the bot operator to configure GitHub first.")
                 return
             repo = repo.strip().lower()
             if REPO_PATTERN.fullmatch(repo) is None:
@@ -178,79 +199,175 @@ class LocalReviewCog(PluginCog):
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
         user = self.bot.user
-        if user is None or message.guild is None or message.author.bot or message.webhook_id:
+        if user is None or message.guild is None or message.webhook_id:
             return
-        mention = re.match(rf"<@!?{user.id}>[\s,]*", message.content)
-        if mention is None:
-            return
-        match = REVIEW_REQUEST.fullmatch(message.content[mention.end() :].strip())
-        if match is None:
+        if message.author.bot and message.author.id != user.id:
             return
         guild_id = message.guild.id
         try:
             reviewer = self.bot.loader.require(LocalReview.name, guild_id)
         except ProcessDisabled:
             return
-        if not isinstance(message.channel, discord.Thread):
-            await self.reply(message, "Ask me to review from inside the discussion thread.")
+        if message.author.id == user.id:
+            self.references.remember(message)
+            return
+        tag = rf"<@!?{user.id}>"
+        mention = re.match(rf"\s*{tag}[\s,]*", message.content)
+        text = message.content[mention.end() :] if mention else message.content
+        try:
+            reference, prompt = await self.references.resolve(message, user.id, text.strip())
+        except discord.HTTPException:
+            if mention:
+                await self.reply(message, "Discord could not read the referenced message.")
+            return
+        if reference is None and mention is None:
+            if not re.search(tag, prompt) or not any(u.id == user.id for u in message.mentions):
+                return
+            reference = Reference("mention", None)
+            prompt = re.sub(tag, "@Lifeguard", prompt)
+        if not prompt:
+            await self.reply(message, "Add a question or request after the mention.")
             return
         if self.review_lock.locked():
-            await self.reply(
-                message, "An agent is already reviewing another thread. Try again shortly."
-            )
+            if mention:
+                await self.reply(
+                    message, "An agent is already handling a request. Try again shortly."
+                )
             return
         async with self.review_lock:
             try:
-                await self.review_thread(message, message.channel, reviewer, match["repo"])
+                if reference is not None:
+                    await self.follow_up(message, reviewer, prompt, reference, bool(mention))
+                elif issue_request := ISSUE_REQUEST.fullmatch(prompt):
+                    if not isinstance(message.channel, discord.Thread):
+                        await self.reply(message, "Ask me to file issues from inside the thread.")
+                        return
+                    await self.review_thread(
+                        message, message.channel, reviewer, prompt, issue_request["repo"]
+                    )
+                else:
+                    response, scope = await self.ask_agent(message, reviewer, prompt)
+                    assert isinstance(response, str)
+                    await self.reply(message, response + scope)
             except ProcessDisabled:
                 await self.reply(message, "Local review was disabled in this server.")
             except (ReviewError, RelinkRequired) as exc:
                 await self.reply(message, str(exc))
             except discord.Forbidden:
-                await self.reply(message, "I need permission to read this thread and its history.")
+                await self.reply(
+                    message, "I need permission to read the discussion and reply here."
+                )
             except discord.HTTPException:
-                await self.reply(message, "Discord could not complete the review request.")
+                await self.reply(message, "Discord could not complete the request.")
+
+    async def follow_up(
+        self,
+        message: discord.Message,
+        reviewer: LocalReview,
+        prompt: str,
+        reference: Reference,
+        mentioned: bool,
+    ) -> None:
+        assert message.guild is not None
+        try:
+            # Passive discussion should leave no visible typing or error message.
+            result = await reviewer.review(
+                message.guild.id,
+                prompt,
+                None,
+                [],
+                False,
+                reference={
+                    "kind": reference.kind,
+                    "content": reference.content,
+                    "mentioned": mentioned,
+                },
+            )
+        except ReviewError:
+            if mentioned:
+                raise
+            return
+        assert isinstance(result, Followup)
+        if result.action == "ignore":
+            return
+        if reference.kind == "mention" and result.action not in {"reply", "react"}:
+            return
+        self.require_current(message, reviewer)
+        if result.action == "reply":
+            await self.reply(message, result.text)
+        elif result.action == "react":
+            with suppress(discord.HTTPException):
+                await message.add_reaction(result.text)
+        elif result.action == "post_pr_comment":
+            await self.post_pr_comment(message, reviewer, result, prompt, reference.content)
+        else:
+            github = require_github(reviewer)
+            repo = await select_repo(github.store, message.channel, result.repo)
+            await self.publish_issues(message, reviewer, repo, result.issues)
+
+    def require_current(self, message: discord.Message, reviewer: LocalReview) -> None:
+        assert message.guild is not None
+        if self.bot.loader.require(LocalReview.name, message.guild.id) is not reviewer:
+            raise ReviewError("Local review restarted. Send a new request to try again.")
+
+    async def ask_agent(
+        self,
+        message: discord.Message,
+        reviewer: LocalReview,
+        prompt: str,
+        *,
+        repo: str | None = None,
+    ) -> tuple[ReviewResult, str]:
+        assert message.guild is not None
+        channel = message.channel
+        title = None
+        context, limited = [], False
+        if isinstance(channel, discord.Thread):
+            title = channel.name
+            context, limited = await thread_context(channel, message)
+        if repo is not None and not context:
+            raise ReviewError("I found no discussion text before your request.")
+        guild_id = message.guild.id
+        self.require_current(message, reviewer)
+        async with channel.typing():
+            result = await reviewer.review(guild_id, prompt, title, context, limited, repo=repo)
+        self.require_current(message, reviewer)
+        return result, CONTEXT_NOTICE if limited else ""
 
     async def review_thread(
         self,
         message: discord.Message,
         thread: discord.Thread,
         reviewer: LocalReview,
+        prompt: str,
         requested_repo: str | None,
     ) -> None:
-        store, github = reviewer.github.store, reviewer.github.gh
+        store = require_github(reviewer).store
         if await store.one("SELECT 1 FROM local_review_requests WHERE message_id=?", (message.id,)):
             return
         repo = await select_repo(store, thread, requested_repo)
         author_id = message.author.id
         if not await store.one("SELECT 1 FROM user_links WHERE discord_id=?", (author_id,)):
             raise ReviewError("Link your GitHub account from `/lg setup` first.")
-        context, limited = await thread_context(thread, message)
-        if not context:
-            raise ReviewError("I found no discussion text before your request.")
-        guild_id = thread.guild.id
-        if self.bot.loader.require(LocalReview.name, guild_id) is not reviewer:
-            raise ReviewError("Local review restarted. Send a new request to try again.")
-        async with thread.typing():
-            issues = await reviewer.review(guild_id, repo, thread.name, context, limited)
-        scope = "\nI reviewed the most recent messages within the context limit." if limited else ""
+        issues, scope = await self.ask_agent(message, reviewer, prompt, repo=repo)
+        assert isinstance(issues, list)
+        await self.publish_issues(message, reviewer, repo, issues, scope)
+
+    async def publish_issues(
+        self,
+        message: discord.Message,
+        reviewer: LocalReview,
+        repo: str,
+        issues: list[tuple[str, str]],
+        scope: str = "",
+    ) -> None:
         if not issues:
             await self.reply(message, "I found no actionable GitHub issues." + scope)
             return
 
-        # Check enablement again after waiting for the agent.
-        if self.bot.loader.require(LocalReview.name, guild_id) is not reviewer:
-            raise ReviewError("Local review restarted. Send a new request to try again.")
-        try:
-            token = await github.user_token(author_id)
-        except RelinkRequired as exc:
-            raise ReviewError("Relink your GitHub account from `/lg setup`.") from exc
-        except (aiohttp.ClientError, TimeoutError) as exc:
-            raise ReviewError("GitHub could not check your linked account.") from exc
-        await select_repo(store, thread, repo)
-        if not await store.execute(
-            "INSERT OR IGNORE INTO local_review_requests VALUES (?)", (message.id,)
-        ):
+        github = require_github(reviewer).gh
+        token = await self.linked_token(github, message.author.id)
+        if not await self.claim_write(message, reviewer, repo):
             return
 
         links = []
@@ -275,6 +392,68 @@ class LocalReviewCog(PluginCog):
             result.append(failure)
         await self.reply(message, "\n".join(result) + scope)
 
+    async def post_pr_comment(
+        self,
+        message: discord.Message,
+        reviewer: LocalReview,
+        result: Followup,
+        prompt: str,
+        reference: str | None,
+    ) -> None:
+        target = prompt if PR_NUMBER.search(prompt) else reference or ""
+        identifiers = set(PR_NUMBER.findall(target))
+        linked_repos = {repo.lower() for repo, _ in PR_LINK.findall(target)}
+        if (
+            result.pr_number is None
+            or identifiers != {str(result.pr_number)}
+            or len(linked_repos) > 1
+        ):
+            await self.reply(
+                message, "Which pull request should I comment on? Send its link or number."
+            )
+            return
+        service = require_github(reviewer)
+        requested_repo = next(iter(linked_repos)) if linked_repos else result.repo
+        repo = await select_repo(service.store, message.channel, requested_repo)
+        github = service.gh
+        token = await self.linked_token(github, message.author.id)
+        try:
+            await github.get_pull_request(repo, result.pr_number, token)
+        except (GitHubException, aiohttp.ClientError, TimeoutError) as exc:
+            raise ReviewError(
+                "I couldn’t verify that pull request. Check its link and your access."
+            ) from exc
+        if not await self.claim_write(message, reviewer, repo):
+            return
+        try:
+            comment = await github.create_comment(repo, result.pr_number, result.text, token)
+        except (GitHubException, aiohttp.ClientError, TimeoutError) as exc:
+            raise ReviewError(
+                "GitHub couldn’t confirm the comment. Check the PR before retrying."
+            ) from exc
+        await self.reply(
+            message, f"Posted a [comment on `{repo}#{result.pr_number}`]({comment['html_url']})."
+        )
+
+    @staticmethod
+    async def linked_token(github, author_id: int) -> str:
+        try:
+            return await github.user_token(author_id)
+        except RelinkRequired as exc:
+            raise ReviewError("Link your GitHub account from `/lg setup` first.") from exc
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            raise ReviewError("GitHub could not check your linked account.") from exc
+
+    async def claim_write(self, message: discord.Message, reviewer: LocalReview, repo: str) -> bool:
+        self.require_current(message, reviewer)
+        store = require_github(reviewer).store
+        await select_repo(store, message.channel, repo)
+        return bool(
+            await store.execute(
+                "INSERT OR IGNORE INTO local_review_requests VALUES (?)", (message.id,)
+            )
+        )
+
     @staticmethod
     async def reply(message: discord.Message, content: str) -> None:
         await message.channel.send(
@@ -297,8 +476,9 @@ class SetupView(discord.ui.View):
                 "2. Give your agent `LOCAL_REVIEW_TOKEN` through its local environment. "
                 "Use the same token as the Lifeguard operator.\n"
                 "3. Make an authenticated `GET /v1/health` request. A `200` confirms access. "
-                "Then start the agent polling `POST /v1/jobs/next`.\n"
-                "4. Click **Link GitHub**, then mention Lifeguard in a discussion thread.\n\n"
+                "Then start the agent using the polling endpoint from `/lg hook`.\n"
+                "4. Mention Lifeguard followed by your prompt. For issue creation, "
+                "click **Link GitHub** first.\n\n"
                 f"[Connection examples and the agent protocol]({REVIEW_DOCS})"
             ),
         )
@@ -326,6 +506,9 @@ class SetupView(discord.ui.View):
             reviewer = self.cog.bot.loader.require(LocalReview.name, interaction.guild_id)
         except ProcessDisabled:
             await private_reply(interaction, "Local review is disabled in this server.")
+            return
+        if reviewer.github is None:
+            await private_reply(interaction, "Ask the bot operator to configure GitHub first.")
             return
         view = discord.ui.View(timeout=600)
         url = await link_url(reviewer.github, interaction.user.id)
