@@ -17,6 +17,14 @@ from lifeguard.plugins.local_review.cog import ISSUE_REQUEST, LocalReviewCog
 from lifeguard.plugins.local_review.process import HookSettings, LocalReview
 from lifeguard.plugins.local_review.references import References
 
+MENTION_ROLE_ID = 100
+
+
+def review_member():
+    member = MagicMock(spec=discord.Member, id=2, bot=False)
+    member.get_role.side_effect = {MENTION_ROLE_ID: discord.Object(id=MENTION_ROLE_ID)}.get
+    return member
+
 
 def test_local_review_intent_is_opt_in():
     env = {"DISCORD_TOKEN": "test"}
@@ -50,7 +58,11 @@ async def test_optional_commands_follow_guild_enablement_and_module_removal(tmp_
         assert bot.tree.get_command("lg", guild=first) is None
         assert await bot.set_feature_enabled("local-review", 1, True)
         group = bot.tree.get_command("lg", guild=first)
-        assert {command.name for command in group.commands} == {"hook", "setup"}
+        assert {command.name for command in group.commands} == {"config", "hook", "setup"}
+        (role_option,) = group.get_command("config").parameters
+        assert role_option.name == "role"
+        assert role_option.type is discord.AppCommandOptionType.role
+        assert not role_option.required
         assert group.get_command("setup").parameters[0].name == "repo"
         assert bot.tree.get_command("lg", guild=second) is None
         assert await bot.set_feature_enabled("local-review", 2, True)
@@ -81,6 +93,94 @@ async def test_optional_commands_follow_guild_enablement_and_module_removal(tmp_
         await restarted.close()
 
 
+async def test_mention_role_config_is_admin_only_and_persists(tmp_path, unused_tcp_port):
+    settings = Settings(
+        "test",
+        "test",
+        database_path=str(tmp_path / "bot.db"),
+        environ={"LOCAL_REVIEW_TOKEN": "agent-token", "LOCAL_REVIEW_PORT": str(unused_tcp_port)},
+    )
+    loader = Loader()
+    bot = SimpleNamespace(settings=settings, loader=loader)
+    loader.register(LocalReview.name, lambda: LocalReview(bot))
+    cog = LocalReviewCog(bot)
+    role = MagicMock(spec=discord.Role, id=MENTION_ROLE_ID, mention=f"<@&{MENTION_ROLE_ID}>")
+    role.is_default.return_value = False
+    guild = SimpleNamespace(id=1, get_role={role.id: role}.get)
+    response = SimpleNamespace(is_done=lambda: False, send_message=AsyncMock())
+    interaction = SimpleNamespace(guild=guild, response=response, permissions=discord.Permissions())
+    try:
+        await loader.enable(LocalReview.name, 1)
+        await loader.enable(LocalReview.name, 2)
+        reviewer = loader.require(LocalReview.name, 1)
+        await cog.configure_mentions(interaction, role)
+        assert not reviewer.mention_roles
+        assert "Manage Server" in response.send_message.await_args.args[0]
+
+        interaction.permissions.manage_guild = True
+        await cog.configure_mentions(interaction)
+        assert "Mentions are locked" in response.send_message.await_args.args[0]
+        role.is_default.return_value = True
+        await cog.configure_mentions(interaction, role)
+        assert not reviewer.mention_roles
+        role.is_default.return_value = False
+        await cog.configure_mentions(interaction, role)
+        assert reviewer.mention_roles == {1: MENTION_ROLE_ID}
+        assert response.send_message.await_args.kwargs["ephemeral"]
+
+        await loader.disable(LocalReview.name, 1)
+        with pytest.raises(ProcessDisabled):
+            await cog.configure_mentions(interaction, role)
+        await loader.disable(LocalReview.name, 2)
+        await loader.enable(LocalReview.name, 1)
+        assert loader.require(LocalReview.name, 1) is not reviewer
+        await cog.configure_mentions(interaction)
+        assert role.mention in response.send_message.await_args.args[0]
+        guild.get_role = {}.get
+        await cog.configure_mentions(interaction)
+        assert "role was deleted" in response.send_message.await_args.args[0]
+    finally:
+        await loader.shutdown()
+
+
+@pytest.mark.parametrize("role_id", [None, MENTION_ROLE_ID])
+@pytest.mark.parametrize(
+    ("content", "reference"),
+    [
+        ("<@99> Summarize this", None),
+        ("Can <@99> help?", None),
+        ("Tell me more", discord.MessageReference(message_id=30, channel_id=20, guild_id=1)),
+    ],
+)
+async def test_mentions_and_followups_require_an_assigned_role(role_id, content, reference):
+    bot = SimpleNamespace(user=SimpleNamespace(id=99), loader=MagicMock())
+    reviewer = LocalReview(bot)
+    if role_id is not None:
+        reviewer.mention_roles[1] = role_id
+    bot.loader.require.return_value = reviewer
+    cog = LocalReviewCog(bot)
+    cog.references.resolve = AsyncMock()
+    cog.reply = AsyncMock()
+    author = MagicMock(spec=discord.Member, id=2, bot=False)
+    author.guild_permissions = discord.Permissions(administrator=True)
+    author.get_role.return_value = None
+    message = MagicMock(
+        spec=discord.Message,
+        guild=SimpleNamespace(id=1),
+        webhook_id=None,
+        author=author,
+        content=content,
+        reference=reference,
+        type=discord.MessageType.default if reference is None else discord.MessageType.reply,
+    )
+
+    await cog.on_message(message)
+
+    cog.references.resolve.assert_not_awaited()
+    cog.reply.assert_not_awaited()
+    assert reviewer.pending is None
+
+
 async def test_mention_handoff_and_github_write_without_bridge(unused_tcp_port_factory):
     loader = Loader()
     hook_port, oauth_port = unused_tcp_port_factory(), unused_tcp_port_factory()
@@ -109,6 +209,7 @@ async def test_mention_handoff_and_github_write_without_bridge(unused_tcp_port_f
     loader.register(LocalReview.name, lambda: reviewer)
     try:
         await loader.enable(LocalReview.name, 1)
+        await reviewer.set_mention_role(1, MENTION_ROLE_ID)
         store, gh = service.store, service.gh
         gh.user_token = AsyncMock(return_value="linked-user-token")
         gh.create_issue = AsyncMock(
@@ -170,7 +271,7 @@ async def test_mention_handoff_and_github_write_without_bridge(unused_tcp_port_f
             id=30,
             guild=guild,
             channel=thread,
-            author=SimpleNamespace(id=2, bot=False),
+            author=review_member(),
             webhook_id=None,
             jump_url="https://discord.com/channels/1/20/30",
         )
@@ -303,6 +404,7 @@ async def test_free_form_mention_replies_without_github(
     loader.register(LocalReview.name, lambda: reviewer)
     await loader.enable(LocalReview.name, 1)
     try:
+        await reviewer.set_mention_role(1, MENTION_ROLE_ID)
         guild = SimpleNamespace(id=1)
         channel = MagicMock(spec=discord.Thread if inside_thread else discord.TextChannel)
         channel.name = "Export discussion"
@@ -312,7 +414,7 @@ async def test_free_form_mention_replies_without_github(
             content=f"<@99> {prompt}",
             guild=guild,
             channel=channel,
-            author=SimpleNamespace(id=2, bot=False),
+            author=review_member(),
             webhook_id=None,
         )
 
@@ -384,13 +486,14 @@ async def test_inline_mention_routes_conversation_only(
     loader.register(LocalReview.name, lambda: reviewer)
     await loader.enable(LocalReview.name, 1)
     try:
+        await reviewer.set_mention_role(1, MENTION_ROLE_ID)
         message = MagicMock(
             spec=discord.Message,
             content=prompt.replace("@Lifeguard", "<@99>"),
             mentions=[bot.user],
             guild=SimpleNamespace(id=1),
             channel=MagicMock(spec=discord.TextChannel),
-            author=SimpleNamespace(id=2, bot=False),
+            author=review_member(),
             reference=None,
             webhook_id=None,
         )

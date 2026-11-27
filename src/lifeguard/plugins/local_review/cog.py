@@ -137,11 +137,14 @@ class LocalReviewCog(PluginCog):
         self.review_lock = asyncio.Lock()
         self.references = References()
         self.guild_commands = app_commands.Group(
-            name="lg", description="Connect an agent to Lifeguard", guild_only=True
+            name="lg", description="Set up and configure local review", guild_only=True
         )
         self.guild_commands.command(name="hook", description="Show the local agent hook")(self.hook)
         self.guild_commands.command(name="setup", description="Set up your local review agent")(
             self.setup_agent
+        )
+        self.guild_commands.command(name="config", description="Set or view the mention role")(
+            self.configure_mentions
         )
 
     async def hook(self, interaction: discord.Interaction) -> None:
@@ -196,6 +199,34 @@ class LocalReviewCog(PluginCog):
             message = f"Default repository set to `{repo}`. " + message
         await private_reply(interaction, message, view=SetupView(self))
 
+    @app_commands.describe(role="Role required to mention or follow up with Lifeguard")
+    async def configure_mentions(
+        self, interaction: discord.Interaction, role: discord.Role | None = None
+    ) -> None:
+        guild = interaction.guild
+        assert guild is not None
+        reviewer = self.bot.loader.require(LocalReview.name, guild.id)
+        if not interaction.permissions.manage_guild:
+            await private_reply(
+                interaction, "Manage Server permission is required to configure mentions."
+            )
+            return
+        if role is None:
+            role_id = reviewer.mention_roles.get(guild.id)
+            configured = guild.get_role(role_id) if role_id is not None else None
+            if configured is not None:
+                message = f"Members with {configured.mention} can use mentions and follow-ups."
+            elif role_id is not None:
+                message = "The configured role was deleted. Choose a new role with `/lg config`."
+            else:
+                message = "Mentions are locked. Choose a role with `/lg config`."
+        elif role.is_default():
+            message = "Choose a role that can be assigned to individual members."
+        else:
+            await reviewer.set_mention_role(guild.id, role.id)
+            message = f"Members with {role.mention} can now mention or follow up with Lifeguard."
+        await private_reply(interaction, message)
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
         user = self.bot.user
@@ -210,6 +241,13 @@ class LocalReviewCog(PluginCog):
             return
         if message.author.id == user.id:
             self.references.remember(message)
+            return
+        role_id = reviewer.mention_roles.get(guild_id)
+        if (
+            role_id is None
+            or not isinstance(message.author, discord.Member)
+            or message.author.get_role(role_id) is None
+        ):
             return
         tag = rf"<@!?{user.id}>"
         mention = re.match(rf"\s*{tag}[\s,]*", message.content)

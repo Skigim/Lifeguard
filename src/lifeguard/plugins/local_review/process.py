@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from aiohttp import web
 
 from lifeguard.config import ConfigError
+from lifeguard.core.github.store import Store
 from lifeguard.core.process import Process
 
 if TYPE_CHECKING:
@@ -146,6 +147,8 @@ class LocalReview(Process):
     def __init__(self, bot: LifeguardBot) -> None:
         self.bot = bot
         self.github: GitHubService | None = None
+        self.mention_roles: dict[int, int] = {}
+        self.config_store: Store | None = None
         self.available = asyncio.Condition()
         self.pending: ReviewJob | None = None
         self.stopping = False
@@ -166,6 +169,17 @@ class LocalReview(Process):
         app.router.add_post("/v1/jobs/next", self.next_job)
         app.router.add_post("/v1/jobs/{job_id}/result", self.submit_result)
         async with AsyncExitStack() as resources:
+            if self.bot.settings.database_path:
+                self.config_store = await Store.open(self.bot.settings.database_path)
+                resources.push_async_callback(self.config_store.close)
+                await self.config_store.execute(
+                    "CREATE TABLE IF NOT EXISTS local_review_mention_roles "
+                    "(guild_id INTEGER PRIMARY KEY, role_id INTEGER NOT NULL)"
+                )
+                rows = await self.config_store.all(
+                    "SELECT guild_id, role_id FROM local_review_mention_roles"
+                )
+                self.mention_roles = {row["guild_id"]: row["role_id"] for row in rows}
             if self.bot.settings.github and self.bot.settings.database_path:
                 self.github = await resources.enter_async_context(self.bot.github_service.connect())
                 await self.github.store.execute(
@@ -177,6 +191,13 @@ class LocalReview(Process):
             resources.push_async_callback(self.runner.cleanup)
             await web.TCPSite(self.runner, self.settings.host, self.settings.port).start()
             self._resources = resources.pop_all()
+
+    async def set_mention_role(self, guild_id: int, role_id: int) -> None:
+        if self.config_store is not None:
+            await self.config_store.put(
+                "local_review_mention_roles", guild_id=guild_id, role_id=role_id
+            )
+        self.mention_roles[guild_id] = role_id
 
     async def stop(self) -> None:
         async with self.available:
