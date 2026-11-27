@@ -1,6 +1,7 @@
 # Local review
 
-Start a message with a Discord mention of Lifeguard, followed by your prompt.
+Once you have the server's configured Lifeguard role, start a message with a
+Discord mention of Lifeguard, followed by your prompt.
 Inside a thread or forum post, Lifeguard sends the recent discussion to the
 agent along with your prompt. The agent's answer appears as a reply in Discord.
 
@@ -32,6 +33,9 @@ It uses the server's local-review repository when configured. Existing bridge
 mappings also work. Append `repo:owner/repo` to select a configured repository
 explicitly.
 
+- `/lg config role:<role>` sets the server's required role for mentions and
+  follow-ups. Run `/lg config` to view the current role. Both require **Manage
+  Server** permission.
 - `/lg hook` shows the hook address, authentication format, and endpoints.
 - `/lg setup` walks you through connecting an agent on your machine and linking
   your GitHub account. Server admins can set the default repository with
@@ -46,6 +50,10 @@ explicitly.
    in Threads where you want it to review discussions.
 3. Run `/feature enable name:local-review` in each server where you want the
    feature. This registers `/lg` for that server.
+4. Use `/lg config` to select a role, then assign that role to members who should
+   be able to use mentions and follow-ups. Lifeguard ignores these messages until
+   a role is configured. Set `DATABASE_PATH` to keep the role setting across
+   restarts.
 
 To enable issue creation, configure `DATABASE_PATH` and install the GitHub App
 on the target repository with **Issues: read and write** permission. Account
